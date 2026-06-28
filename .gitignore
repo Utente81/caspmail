@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.cache/
+postgres-data/
+pgadmin-data/
+keycloak-data/
+frontend_backup_css_planet/
+*.bak
+.*deleted*
+patch_*.js
+secrets/

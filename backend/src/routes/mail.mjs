@@ -1,0 +1,430 @@
+import { v4 as uuidv4 } from 'uuid';
+import pool from '../db/pool.mjs';
+import { requireAuth } from '../auth/verify.mjs';
+
+const authGuard = { preHandler: requireAuth };
+
+export default async function mailRoutes(app) {
+  // Helper: look up user row from JWT email
+  async function getUser(jwtPayload) {
+    let email = jwtPayload.email || jwtPayload.preferred_username || jwtPayload.sub;
+    if (!email) throw new Error("Missing email, username and sub in JWT");
+
+    let { rows } = await pool.query(
+      'SELECT * FROM users WHERE email = $1 LIMIT 1',
+      [email]
+    );
+
+    if (rows.length === 0) {
+      const name = jwtPayload.name || email.split('@')[0];
+      const tenant = 'caspmail';
+      try {
+        const res = await pool.query(
+          `INSERT INTO users (tenant_id, email, name) VALUES ($1, $2, $3) RETURNING *`,
+          [tenant, email, name]
+        );
+        rows = res.rows;
+      } catch (e) {
+        throw new Error("AUTO_PROVISION_FAIL: " + e.message + " | email: " + email);
+      }
+    }
+    
+    if (!rows[0]) throw new Error("User row is empty after insert");
+    return rows[0];
+  }
+
+  // ─── Current User ─────────────────────────────────────────────────────────
+
+  app.get('/api/me', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    reply.send(user);
+  });
+
+  app.get('/api/me/dashboard', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const [inbox, keys, storage] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE read_at IS NULL) AS unread
+        FROM e2ee_messages
+        WHERE tenant_id = $1 AND to_email = $2 AND deleted_at IS NULL AND recipient_deleted_at IS NULL
+          AND COALESCE((recipient_flags->>'spam')::boolean, false) = false
+          AND COALESCE((recipient_flags->>'archived')::boolean, false) = false
+      `, [user.tenant_id, user.email]),
+      pool.query(`
+        SELECT key_fingerprint, created_at
+        FROM e2ee_keys
+        WHERE tenant_id = $1 AND user_email = $2
+        LIMIT 1
+      `, [user.tenant_id, user.email]),
+      pool.query(`
+        SELECT
+          COUNT(*) AS message_count,
+          COALESCE(SUM(
+            octet_length(COALESCE(subject_encrypted,'')) +
+            octet_length(COALESCE(body_encrypted,'')) +
+            octet_length(COALESCE(nonce,''))
+          ), 0) AS bytes_used
+        FROM e2ee_messages
+        WHERE tenant_id = $1 AND to_email = $2 AND deleted_at IS NULL
+      `, [user.tenant_id, user.email]),
+    ]);
+
+    const bytesUsed = Number(storage.rows[0]?.bytes_used || 0);
+    const mbUsed    = Math.round(bytesUsed / 1024 / 1024 * 100) / 100;
+    const quotaMb   = user.quota_mb || 100;
+
+    reply.send({
+      user,
+      inbox: inbox.rows[0],
+      has_keys: keys.rows.length > 0,
+      key_fingerprint: keys.rows[0]?.key_fingerprint || null,
+      storage: {
+        used_mb:    mbUsed,
+        quota_mb:   quotaMb,
+        used_pct:   Math.min(100, Math.round((mbUsed / quotaMb) * 100)),
+        bytes_used: bytesUsed,
+      },
+    });
+  });
+
+  // ─── E2EE Keys ────────────────────────────────────────────────────────────
+
+  
+
+
+
+  app.post('/api/e2ee/me/keys', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      if (!user) return reply.status(404).send({ error: 'User not found' });
+
+      const { public_key, key_fingerprint, private_key_encrypted, private_key_salt } = req.body || {};
+      if (!public_key || !key_fingerprint) {
+        return reply.status(400).send({ error: 'public_key and key_fingerprint are required' });
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO e2ee_keys (tenant_id, user_email, public_key, key_fingerprint, private_key_encrypted, private_key_salt)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (tenant_id, user_email)
+         DO UPDATE SET public_key = EXCLUDED.public_key,
+                       key_fingerprint = EXCLUDED.key_fingerprint,
+                       private_key_encrypted = EXCLUDED.private_key_encrypted,
+                       private_key_salt = EXCLUDED.private_key_salt,
+                       created_at = NOW()
+         RETURNING *`,
+        [user.tenant_id, user.email, public_key, key_fingerprint, private_key_encrypted || null, private_key_salt || null]
+      );
+
+      reply.status(201).send(rows[0]);
+    } catch (e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  app.get('/api/e2ee/me/keys', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      if (!user) return reply.status(404).send({ error: 'User not found' });
+
+      const { rows } = await pool.query(
+        'SELECT * FROM e2ee_keys WHERE tenant_id = $1 AND user_email = $2',
+        [user.tenant_id, user.email]
+      );
+
+      reply.send({ data: rows });
+    } catch (e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  // ─── Messages (Inbox) ─────────────────────────────────────────────────────
+
+  app.get('/api/e2ee/messages', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
+    const offset = parseInt(req.query.offset || '0', 10);
+    const folder = req.query.folder || 'inbox';
+    const unread = req.query.unread === 'true';
+
+    let query = `
+      SELECT id, from_email, to_email, subject_encrypted, nonce, created_at, read_at, sender_flags, recipient_flags, sender_deleted_at, recipient_deleted_at, sender_subject_encrypted, sender_nonce
+      FROM e2ee_messages
+      WHERE tenant_id = $1 AND deleted_at IS NULL
+        AND (from_email != $2 OR COALESCE((sender_flags->>'cleared')::boolean, false) = false)
+        AND (to_email != $2 OR COALESCE((recipient_flags->>'cleared')::boolean, false) = false)
+    `;
+    const params = [user.tenant_id, user.email];
+
+    if (folder === 'inbox') {
+      query += ` AND to_email = $2 AND recipient_deleted_at IS NULL 
+                 AND COALESCE((recipient_flags->>'spam')::boolean, false) = false 
+                 AND COALESCE((recipient_flags->>'archived')::boolean, false) = false`;
+    } else if (folder === 'sent') {
+      query += ` AND from_email = $2 AND sender_deleted_at IS NULL`;
+    } else if (folder === 'trash') {
+      query += ` AND (
+        (from_email = $2 AND sender_deleted_at IS NOT NULL) OR
+        (to_email = $2 AND recipient_deleted_at IS NOT NULL)
+      )`;
+    } else if (folder === 'archive') {
+      query += ` AND to_email = $2 AND recipient_deleted_at IS NULL AND COALESCE((recipient_flags->>'archived')::boolean, false) = true`;
+    } else if (folder === 'spam') {
+      query += ` AND to_email = $2 AND recipient_deleted_at IS NULL AND COALESCE((recipient_flags->>'spam')::boolean, false) = true`;
+    } else if (folder === 'important') {
+      query += ` AND (
+        (to_email = $2 AND recipient_deleted_at IS NULL AND COALESCE((recipient_flags->>'important')::boolean, false) = true) OR
+        (from_email = $2 AND sender_deleted_at IS NULL AND COALESCE((sender_flags->>'important')::boolean, false) = true)
+      )`;
+    } else {
+      // Custom folder
+      params.push(folder);
+      query += ` AND (
+        (to_email = $2 AND recipient_deleted_at IS NULL AND recipient_flags->>'folder_id' = $3) OR
+        (from_email = $2 AND sender_deleted_at IS NULL AND sender_flags->>'folder_id' = $3)
+      )`;
+    }
+
+    if (unread) {
+      query += ' AND read_at IS NULL';
+    }
+
+    params.push(limit, offset);
+    query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+    const { rows } = await pool.query(query, params);
+    
+    // Remap for sender double encryption
+    const mappedRows = rows.map(r => {
+      if (r.from_email === user.email && r.to_email !== user.email && r.sender_subject_encrypted) {
+         return {
+           ...r,
+           subject_encrypted: r.sender_subject_encrypted,
+           nonce: r.sender_nonce
+         }
+      }
+      return r;
+    });
+
+    reply.send({ data: mappedRows, limit, offset, folder });
+  });
+
+  // ─── Send Message ─────────────────────────────────────────────────────────
+
+  app.post('/api/e2ee/messages', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const { to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce } = req.body || {};
+    if (!to_email || !subject_encrypted || !body_encrypted || !nonce) {
+      return reply.status(400).send({
+        error: 'to_email, subject_encrypted, body_encrypted, and nonce are required',
+      });
+    }
+
+    // Recipient must exist in the same tenant
+    const recipient = await pool.query(
+      'SELECT id FROM users WHERE tenant_id = $1 AND email = $2',
+      [user.tenant_id, to_email]
+    );
+    if (recipient.rows.length === 0) {
+      return reply.status(404).send({ error: 'Recipient not found in your tenant' });
+    }
+
+    // Enforce sender quota
+    const { rows: qRows } = await pool.query(`
+      SELECT COALESCE(SUM(
+        octet_length(COALESCE(subject_encrypted,'')) +
+        octet_length(COALESCE(body_encrypted,'')) +
+        octet_length(COALESCE(nonce,''))
+      ), 0) AS bytes_used
+      FROM e2ee_messages
+      WHERE tenant_id=$1 AND from_email=$2 AND deleted_at IS NULL
+    `, [user.tenant_id, user.email]);
+    const usedMb = Number(qRows[0].bytes_used) / 1024 / 1024;
+    if (user.quota_mb && usedMb >= user.quota_mb) {
+      return reply.status(413).send({ error: `Storage quota exceeded (${user.quota_mb} MB). Delete old messages to free space.` });
+    }
+
+    const id = uuidv4();
+    const { rows } = await pool.query(
+      `INSERT INTO e2ee_messages
+         (id, tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [id, user.tenant_id, user.email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce]
+    );
+
+    reply.status(201).send(rows[0]);
+  });
+
+  // ─── Public Key Lookup (for composers) ───────────────────────────────────
+
+  app.get('/api/e2ee/keys/:email', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const email = req.params.email;
+
+    // Check if it's an alias
+    const aliasRes = await pool.query(
+      'SELECT members FROM organization_aliases WHERE tenant_id = $1 AND alias_email = $2',
+      [user.tenant_id, email]
+    );
+
+    let emailsToFetch = [email];
+    if (aliasRes.rowCount > 0 && Array.isArray(aliasRes.rows[0].members)) {
+      emailsToFetch = aliasRes.rows[0].members;
+    }
+
+    if (emailsToFetch.length === 0) {
+      return reply.send({ data: [] });
+    }
+
+    const { rows } = await pool.query(
+      'SELECT user_email, public_key, key_fingerprint, created_at FROM e2ee_keys WHERE tenant_id = $1 AND user_email = ANY($2::varchar[])',
+      [user.tenant_id, emailsToFetch]
+    );
+
+    reply.send({ data: rows });
+  });
+
+  // ─── Get Single Message ───────────────────────────────────────────────────
+
+  app.get('/api/e2ee/messages/:id', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const { rows, rowCount } = await pool.query(
+      `SELECT * FROM e2ee_messages
+       WHERE id = $1
+         AND tenant_id = $2
+         AND (to_email = $3 OR from_email = $3)
+         AND deleted_at IS NULL`,
+      [req.params.id, user.tenant_id, user.email]
+    );
+
+    if (rowCount === 0) {
+      return reply.status(404).send({ error: 'Message not found' });
+    }
+
+    const msg = rows[0];
+
+    // Mark as read if the recipient is viewing it
+    if (msg.to_email === user.email && !msg.read_at) {
+      await pool.query(
+        'UPDATE e2ee_messages SET read_at = NOW() WHERE id = $1',
+        [req.params.id]
+      );
+      msg.read_at = new Date().toISOString();
+    }
+
+    // Remap payload if sender is requesting their sent message
+    if (msg.from_email === user.email && msg.to_email !== user.email && msg.sender_subject_encrypted) {
+      msg.subject_encrypted = msg.sender_subject_encrypted;
+      msg.body_encrypted = msg.sender_body_encrypted;
+      msg.nonce = msg.sender_nonce;
+    }
+
+    reply.send(msg);
+  });
+
+  // ─── Trash / Delete / Flags ───────────────────────────────────────────────────────
+
+  app.patch('/api/e2ee/messages/:id/flags', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    
+    const { flags } = req.body; 
+    if (!flags || typeof flags !== 'object') return reply.status(400).send({error: 'Invalid flags'});
+
+    const { rows } = await pool.query(`
+      UPDATE e2ee_messages
+      SET
+        sender_flags = CASE WHEN from_email = $2 THEN sender_flags || $4::jsonb ELSE sender_flags END,
+        recipient_flags = CASE WHEN to_email = $2 THEN recipient_flags || $4::jsonb ELSE recipient_flags END
+      WHERE id = $1 AND tenant_id = $3 AND (from_email = $2 OR to_email = $2)
+      RETURNING id, sender_flags, recipient_flags
+    `, [req.params.id, user.email, user.tenant_id, JSON.stringify(flags)]);
+    
+    if (rows.length === 0) return reply.status(404).send({ error: 'Message not found' });
+    reply.send(rows[0]);
+  });
+
+  app.patch('/api/e2ee/messages/:id/trash', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const { rows } = await pool.query(`
+      UPDATE e2ee_messages
+      SET
+        sender_deleted_at = CASE WHEN from_email = $2 THEN NOW() ELSE sender_deleted_at END,
+        recipient_deleted_at = CASE WHEN to_email = $2 THEN NOW() ELSE recipient_deleted_at END
+      WHERE id = $1 AND tenant_id = $3 AND (from_email = $2 OR to_email = $2)
+      RETURNING *
+    `, [req.params.id, user.email, user.tenant_id]);
+
+    if (rows.length === 0) return reply.status(404).send({ error: 'Message not found' });
+    reply.send(rows[0]);
+  });
+
+  app.delete('/api/e2ee/messages/:id', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    const { id } = req.params;
+    try {
+      await pool.query(
+        "UPDATE e2ee_messages SET sender_flags = COALESCE(sender_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND from_email = $2 AND id = $3",
+        [user.tenant_id, user.email, id]
+      );
+      await pool.query(
+        "UPDATE e2ee_messages SET recipient_flags = COALESCE(recipient_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND to_email = $2 AND id = $3",
+        [user.tenant_id, user.email, id]
+      );
+      reply.send({ success: true });
+    } catch (err) {
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // ================= Bulk & Trash =================
+  app.delete('/api/e2ee/trash', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    await pool.query(
+      "UPDATE e2ee_messages SET sender_flags = COALESCE(sender_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND from_email = $2 AND sender_deleted_at IS NOT NULL"
+    , [user.tenant_id, user.email]);
+    await pool.query(
+      "UPDATE e2ee_messages SET recipient_flags = COALESCE(recipient_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND to_email = $2 AND recipient_deleted_at IS NOT NULL"
+    , [user.tenant_id, user.email]);
+    reply.send({ success: true });
+  });
+
+  app.patch('/api/e2ee/messages/bulk/flags', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    const { ids, flags } = req.body;
+    if (!ids || !Array.isArray(ids) || !flags) return reply.status(400).send({ error: 'Invalid payload' });
+    await pool.query(
+      "UPDATE e2ee_messages SET sender_flags = CASE WHEN from_email = $2 THEN COALESCE(sender_flags, '{}'::jsonb) || $3::jsonb ELSE sender_flags END, recipient_flags = CASE WHEN to_email = $2 THEN COALESCE(recipient_flags, '{}'::jsonb) || $3::jsonb ELSE recipient_flags END WHERE tenant_id = $1 AND id = ANY($4) AND (from_email = $2 OR to_email = $2)" 
+    , [user.tenant_id, user.email, JSON.stringify(flags), ids]);
+    reply.send({ success: true });
+  });
+
+  app.patch('/api/e2ee/messages/bulk/trash', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids)) return reply.status(400).send({ error: 'Invalid payload' });
+    await pool.query(
+      "UPDATE e2ee_messages SET sender_deleted_at = CASE WHEN from_email = $2 THEN NOW() ELSE sender_deleted_at END, recipient_deleted_at = CASE WHEN to_email = $2 THEN NOW() ELSE recipient_deleted_at END WHERE tenant_id = $1 AND id = ANY($3) AND (from_email = $2 OR to_email = $2)" 
+    , [user.tenant_id, user.email, ids]);
+    reply.send({ success: true });
+  });
+}

@@ -1,0 +1,164 @@
+name: caspermail
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: casper-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: caspermail
+      POSTGRES_USER: caspermail
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caspermail -d caspermail"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: casper-redis
+    restart: unless-stopped
+    command: >
+      sh -c 'exec redis-server --requirepass "$$(cat /run/secrets/redis_password)" --appendonly yes'
+    secrets:
+      - redis_password
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: casper-keycloak
+    restart: unless-stopped
+    entrypoint: >
+      /bin/bash -c "
+        export KC_DB_PASSWORD=$$(cat /run/secrets/postgres_password) &&
+        export KEYCLOAK_ADMIN_PASSWORD=$$(cat /run/secrets/keycloak_admin_password) &&
+        /opt/keycloak/bin/kc.sh start
+      "
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/caspermail
+      KC_DB_USERNAME: caspermail
+      KEYCLOAK_ADMIN: admin
+      KC_HOSTNAME: auth.secure.internal
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      KC_HTTPS_ENABLED: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_LOG_LEVEL: INFO
+      KC_HEALTH_ENABLED: "true"
+
+    secrets:
+      - postgres_password
+      - keycloak_admin_password
+    volumes:
+      - ./keycloak/themes:/opt/keycloak/themes
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: caspermail-backend:latest
+    container_name: casper-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: caspermail
+      DB_NAME: caspermail
+      DATABASE_SSL: "false"
+      KEYCLOAK_ISSUER: https://auth.secure.internal/realms/caspermail
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/caspermail/protocol/openid-connect/certs
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      MIGRATIONS_DIR: /app/migrations
+      KEYCLOAK_REALM: caspermail
+      KEYCLOAK_ADMIN_USER: admin
+      KEYCLOAK_ADMIN_PASSWORD_FILE: /run/secrets/keycloak_admin_password
+      CORS_ORIGINS: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
+    secrets:
+      - postgres_password
+      - keycloak_admin_password
+    volumes:
+      - ./database/migrations:/app/migrations:ro
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  frontend:
+    image: nginx:alpine
+    container_name: casper-frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx/spa.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [internal]
+
+  nginx:
+    image: nginx:alpine
+    container_name: casper-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/caspermail.conf:/etc/nginx/conf.d/caspermail.conf:ro
+      - ./nginx/ssl:/etc/ssl/caspermail:ro
+    networks:
+      - internal
+      - public
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  public:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+secrets:
+  postgres_password:
+    file: /opt/caspermail/runtime-secrets/postgres_password
+  redis_password:
+    file: /opt/caspermail/runtime-secrets/redis_password
+  keycloak_admin_password:
+    file: /opt/caspermail/runtime-secrets/keycloak_admin_password

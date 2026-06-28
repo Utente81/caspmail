@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: casper-backend
+  namespace: caspermail
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: backend
+        image: caspermail-backend:latest
+        imagePullPolicy: Never
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: PORT
+          value: "3000"
+        - name: DB_HOST
+          value: casper-pg-postgresql-primary
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          value: caspermail
+        - name: DB_NAME
+          value: caspermail
+        - name: DATABASE_SSL
+          value: "false"
+        - name: KEYCLOAK_ISSUER
+          value: https://auth.secure.internal/realms/caspermail
+        - name: KEYCLOAK_JWKS_URI
+          value: http://casper-keycloak:8080/realms/caspermail/protocol/openid-connect/certs
+        - name: KEYCLOAK_INTERNAL_URL
+          value: http://casper-keycloak:8080
+        - name: KEYCLOAK_REALM
+          value: caspermail
+        - name: KEYCLOAK_ADMIN_USER
+          value: admin
+        - name: CORS_ORIGINS
+          value: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: secrets
+          mountPath: /run/secrets
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: secrets
+        secret:
+          secretName: casper-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: casper-backend
+  namespace: caspermail
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: casper-backend-hpa
+  namespace: caspermail
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: casper-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80

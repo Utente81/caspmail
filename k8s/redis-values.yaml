@@ -1,0 +1,16 @@
+# Redis HA configuration using Bitnami chart
+architecture: replication
+auth:
+  enabled: true
+  password: "***REDACTED***" # In a real enterprise we'd use existing Secrets
+
+master:
+  persistence:
+    enabled: true
+    size: 2Gi
+
+replica:
+  replicaCount: 2
+  persistence:
+    enabled: true
+    size: 2Gi

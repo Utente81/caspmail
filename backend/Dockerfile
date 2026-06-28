@@ -20,7 +20,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src/ ./src/
 
-# Migrations are mounted as a volume at runtime (/app/migrations)
+COPY migrations/ ./migrations/
 # so no COPY needed here — the compose file handles it.
 
 # Drop privileges

@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: caspermail-ingress
+  namespace: caspermail
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    # Traefik specific annotations for routing
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  - host: secure.internal
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
+  - host: auth.secure.internal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-keycloak
+            port:
+              number: 8080

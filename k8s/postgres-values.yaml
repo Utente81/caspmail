@@ -1,0 +1,15 @@
+global:
+  postgresql:
+    auth:
+      postgresPassword: casper_db_password
+      password: casper_db_password
+      database: caspermail
+      username: caspermail
+architecture: replication
+primary:
+  persistence:
+    size: 2Gi
+readReplicas:
+  replicaCount: 2
+  persistence:
+    size: 2Gi

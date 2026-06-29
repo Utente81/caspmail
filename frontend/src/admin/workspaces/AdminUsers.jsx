@@ -37,7 +37,7 @@ export default function AdminUsers() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState(null)
   const [editUser, setEditUser] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', role: 'user', quota_mb: 1024, status: 'active', password: '' })
+  const [editForm, setEditForm] = useState({ name: '', role: 'user', quota_mb: 1024, status: 'active', password: '', legal_hold: false })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState(null)
   const [revoking, setRevoking] = useState(false)
@@ -84,7 +84,7 @@ export default function AdminUsers() {
 
   function openEdit(u) {
     setEditUser(u)
-    setEditForm({ name: u.name || '', role: u.role, quota_mb: u.quota_mb, status: u.status, password: '' })
+    setEditForm({ name: u.name || '', role: u.role, quota_mb: u.quota_mb, status: u.status, password: '', legal_hold: u.legal_hold || false })
     setEditError(null)
   }
 
@@ -113,6 +113,22 @@ export default function AdminUsers() {
       alert('All active sessions have been revoked.')
     } catch (e) { alert(e.message) }
     finally { setRevoking(false) }
+  }
+
+  async function handleToggleLegalHold(userId, currentVal) {
+    if (!window.confirm(`Are you sure you want to ${currentVal ? 'REMOVE' : 'ENABLE'} Legal Hold for this user?`)) return;
+    try {
+      const res = await api(`/users/${userId}/legal-hold`, { method: 'PATCH', body: JSON.stringify({ legal_hold: !currentVal }) });
+      if (!res.ok) throw new Error('Failed to update Legal Hold');
+      const updated = await res.json();
+      setRows(r => r.map(u => u.id === updated.id ? updated : u));
+      if (editUser && editUser.id === updated.id) {
+        setEditForm(f => ({ ...f, legal_hold: updated.legal_hold }));
+        setEditUser(updated);
+      }
+    } catch (e) {
+      alert(e.message);
+    }
   }
 
   return (
@@ -152,7 +168,7 @@ export default function AdminUsers() {
       <div className="adm-table-wrap">
         <table className="adm-table">
           <thead>
-            <tr><th>Email</th><th>Name</th><th>Tenant</th><th>Role</th><th>Quota</th><th>Status</th><th>Created</th></tr>
+            <tr><th>Email</th><th>Name</th><th>Tenant</th><th>Role</th><th>Quota</th><th>Status</th><th>Legal Hold</th><th>Created</th></tr>
           </thead>
           <tbody>
             {loading ? (
@@ -160,7 +176,7 @@ export default function AdminUsers() {
                 <tr key={i}>{Array.from({ length: 7 }, (_, j) => <td key={j}><div className="adm-skeleton adm-skeleton-row" /></td>)}</tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="adm-empty">{filter ? 'No users match the filter.' : 'No users yet.'}</td></tr>
+              <tr><td colSpan={8} className="adm-empty">{filter ? 'No users match the filter.' : 'No users yet.'}</td></tr>
             ) : filtered.map(u => (
               <tr key={u.id} className="adm-tr-clickable" onClick={() => openEdit(u)}>
                 <td className="adm-td-name">{u.email}</td>
@@ -169,6 +185,12 @@ export default function AdminUsers() {
                 <td><span className={`adm-badge adm-badge-role ${u.role}`}>{u.role}</span></td>
                 <td>{u.quota_mb} MB</td>
                 <td><span className={`adm-badge adm-badge-status ${u.status}`}>{u.status}</span></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={u.legal_hold || false} onChange={() => handleToggleLegalHold(u.id, u.legal_hold)} />
+                    {u.legal_hold ? <span style={{color: 'var(--red)', fontWeight: 'bold'}}>Active</span> : 'Inactive'}
+                  </label>
+                </td>
                 <td className="adm-td-date">{new Date(u.created_at).toLocaleDateString()}</td>
               </tr>
             ))}

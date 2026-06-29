@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool.mjs';
 import { requireAuth } from '../auth/verify.mjs';
+import { logSiemEvent } from '../audit/siem.mjs';
 
 const authGuard = { preHandler: requireAuth };
 
@@ -323,6 +324,15 @@ export default async function mailRoutes(app) {
         [req.params.id]
       );
       msg.read_at = new Date().toISOString();
+
+      logSiemEvent({
+        tenantId: user.tenant_id,
+        actor: user.email,
+        action: 'read_mail',
+        resource: req.params.id,
+        details: { from: msg.from_email, to: msg.to_email },
+        ip: req.ip
+      });
     }
 
     // Remap payload if sender is requesting their sent message

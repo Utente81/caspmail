@@ -46,9 +46,18 @@ export default function AdminAudit() {
     <div className="adm-workspace">
       <div className="adm-workspace-header">
         <h2 className="adm-workspace-title">Audit Log</h2>
-        <button className="adm-btn adm-btn-ghost" onClick={load} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'adm-spin' : ''} /> Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="adm-btn adm-btn-primary" onClick={() => {
+            const token = sessionStorage.getItem('caspmail_access_token');
+            const url = `/api/admin/audit/export?token=${token}`;
+            window.open(url, '_blank');
+          }}>
+            Export CSV
+          </button>
+          <button className="adm-btn adm-btn-ghost" onClick={load} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'adm-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && (

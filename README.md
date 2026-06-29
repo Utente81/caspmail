@@ -8,14 +8,16 @@ CasperMail is a next-generation, highly secure enterprise communication and secu
 
 ## 🌟 Key Features
 
-### 1. 📧 Secure Webmail
+### 1. 📧 Secure Webmail & DLP
 - **End-to-End Encryption Readiness**: Secure PGP key management and encrypted message drafting.
+- **Client-Side Zero-Trust DLP Engine**: Automatically blocks exfiltration of sensitive data (Credit Cards, IBAN, SSN, API Keys) before encryption and logs telemetry to the SOC.
 - **Responsive Interface**: Modern, dark-themed UI built with Tailwind CSS.
 - **Real-time Notifications**: Native browser notifications for incoming messages.
 
-### 2. 🌍 SOC Threat Map (Security Operations Center)
+### 2. 🌍 SOC Threat Map & SOAR
 - **WebGL 3D Globe**: Real-time visualization of inbound cyber attacks using `react-globe.gl`.
 - **Live Event Stream**: Event-Driven architecture using Server-Sent Events (SSE) to push threats instantly from the backend.
+- **SOAR Playbooks**: Automated incident response with **Anti-SSRF Protection** blocking internal network attacks.
 - **MITRE ATT&CK & UEBA**: Advanced telemetry mapping and User Entity Behavior Analytics scoring for intelligent threat clustering.
 
 ### 3. 🔐 Enterprise Authentication (Identity Provider)
@@ -23,9 +25,10 @@ CasperMail is a next-generation, highly secure enterprise communication and secu
 - **Single Sign-On (SSO) & Single Sign-Out**: Seamlessly switch between Mail, SOC, and Admin portals without re-authenticating. Clean session termination.
 - **Role-Based Access Control (RBAC)**: Strict separation of duties (e.g., SOC Analysts cannot read user emails; Standard users cannot view the threat map).
 
-### 4. ⚙️ Admin Console
-- **Centralized Management**: Manage domains, tenants, users, and aliases.
-- **Audit Trails**: Security auditing capabilities and permission enforcement.
+### 4. ⚙️ Admin & Compliance Console
+- **Centralized Management**: Manage domains, tenants, users, and aliases with strict Cross-Tenant data isolation.
+- **Immutable Audit Trails**: High-performance, cryptographically secure audit logs tracing every action to a verified Keycloak identity.
+- **Legal Hold & GDPR Retention**: Enforce legal holds to prevent message destruction, or execute bulk GDPR purges for non-held data.
 
 ---
 

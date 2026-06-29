@@ -31,6 +31,7 @@ export default function AdminOverview({ onNavigate }) {
   const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [purging, setPurging] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -60,6 +61,24 @@ export default function AdminOverview({ onNavigate }) {
     const k = 1024, sizes = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  async function handleRetentionPurge() {
+    if (!window.confirm("WARNING: This will permanently wipe all non-legal-hold deleted messages older than 30 days. This action cannot be undone. Proceed?")) return;
+    setPurging(true);
+    try {
+      const res = await api('/retention/purge', { method: 'POST', body: JSON.stringify({}) });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || res.statusText);
+      }
+      const data = await res.json();
+      alert(`GDPR Purge successful. Permanently deleted ${data.purged_count} records.`);
+    } catch (e) {
+      alert("Purge failed: " + e.message);
+    } finally {
+      setPurging(false);
+    }
   }
 
   return (
@@ -93,6 +112,17 @@ export default function AdminOverview({ onNavigate }) {
         <KPICard label="Encrypted Messages" value={metrics?.total_messages} icon={Users} color="var(--violet)" loading={loading} />
         <KPICard label="Storage Used"       value={metrics ? formatBytes(metrics.storage_used_bytes) : null} icon={Building2} color="var(--amber)" loading={loading} />
         <KPICard label="Users with PGP Keys" value={metrics?.users_with_keys} icon={Globe} color="var(--green)" loading={loading} />
+      </div>
+
+      <h3 className="adm-section-title" style={{ marginTop: '24px' }}>Compliance & Data Retention</h3>
+      <div className="adm-kpi-grid">
+        <div className="adm-quick-card" style={{ cursor: 'pointer', border: '1px solid var(--red)' }} onClick={purging ? undefined : handleRetentionPurge}>
+          <span className="adm-quick-icon">🗑️</span>
+          <div>
+            <p className="adm-quick-label" style={{ color: 'var(--red)' }}>{purging ? 'Purging...' : 'Run GDPR Purge'}</p>
+            <p className="adm-quick-desc">Permanently wipe old messages (ignores Legal Hold).</p>
+          </div>
+        </div>
       </div>
 
       <div className="adm-quick-actions">

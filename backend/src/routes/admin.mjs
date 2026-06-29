@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { readFileSync } from 'fs';
 import pool from '../db/pool.mjs';
 import { requireRole } from '../auth/verify.mjs';
+import { logSiemEvent } from '../audit/siem.mjs';
 
 const ADMIN_ROLES = ['admin', 'casper_admin'];
 const MANAGED_REALM_ROLES = ['user', 'admin', 'soc_analyst', 'soc_manager'];
@@ -279,7 +280,14 @@ function validateSoarPlaybookConfig(trigger_type, action_type, config) {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 export default async function adminRoutes(app) {
-  const adminGuard = { preHandler: requireRole(ADMIN_ROLES) };
+  const adminGuard = {
+  preHandler: async (req, reply) => {
+    if (!req.headers.authorization && req.query?.token) {
+      req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    return requireRole(ADMIN_ROLES)(req, reply);
+  }
+};
 
   // ─── Summary ──────────────────────────────────────────────────────────────
 
@@ -302,7 +310,7 @@ export default async function adminRoutes(app) {
     const offset = parseInt(req.query.offset || '0', 10);
     const search = req.query.search?.trim();
 
-    let query = 'SELECT * FROM tenants WHERE 1=1';
+    let query = "SELECT * FROM tenants WHERE status != 'deleted'";
     const params = [];
 
     if (search) {
@@ -330,7 +338,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'create', 'tenant', $3, $4)`,
-      [id, req.user.sub, JSON.stringify({ id, name }), req.ip]
+      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name }), req.ip]
     );
 
     reply.status(201).send(rows[0]);
@@ -351,10 +359,29 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'update', 'tenant', $3, $4)`,
-      [id, req.user.sub, JSON.stringify({ id, name, status, plan }), req.ip]
+      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, status, plan }), req.ip]
     );
 
     reply.send(rows[0]);
+  });
+
+  app.delete('/tenants/:id', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    
+    const { rowCount } = await pool.query(
+      `UPDATE tenants SET status='deleted' WHERE id=$1 RETURNING *`,
+      [id]
+    );
+
+    if (rowCount === 0) return reply.status(404).send({ error: 'Tenant not found' });
+
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'delete', 'tenant', $3, $4)`,
+      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id }), req.ip]
+    );
+
+    reply.send({ ok: true });
   });
 
   // ─── Users ────────────────────────────────────────────────────────────────
@@ -462,7 +489,7 @@ export default async function adminRoutes(app) {
        VALUES ($1, $2, $3, 'user', $4, $5)`,
       [
         tenant_id,
-        req.user.sub,
+        (req.user.email || req.user.preferred_username || req.user.sub),
         auditAction,
         JSON.stringify({ id: user.id, email: user.email, role: user.role, status: user.status }),
         req.ip,
@@ -530,7 +557,7 @@ export default async function adminRoutes(app) {
        VALUES ($1, $2, $3, 'user', $4, $5)`,
       [
         rows[0].tenant_id,
-        req.user.sub,
+        (req.user.email || req.user.preferred_username || req.user.sub),
         auditAction,
         JSON.stringify({ id, email: rows[0].email, role, status }),
         req.ip,
@@ -570,13 +597,90 @@ export default async function adminRoutes(app) {
        VALUES ($1, $2, 'delete', 'user', $3, $4)`,
       [
         rows[0].tenant_id,
-        req.user.sub,
+        (req.user.email || req.user.preferred_username || req.user.sub),
         JSON.stringify({ id, email: rows[0].email }),
         req.ip,
       ]
     );
 
     reply.send({ ok: true, user: rows[0] });
+  });
+
+  // ─── Legal Hold (Enterprise) ─────────────────────────────────────────────
+
+  app.patch('/users/:id/legal-hold', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { legal_hold } = req.body || {};
+
+    const { rows, rowCount } = await pool.query(
+      `UPDATE users
+       SET legal_hold = $1
+       WHERE id = $2
+       RETURNING *`,
+      [!!legal_hold, id]
+    );
+
+    if (rowCount === 0) return reply.status(404).send({ error: 'User not found' });
+
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'update_legal_hold', 'user', $3, $4)`,
+      [
+        rows[0].tenant_id,
+        (req.user.email || req.user.preferred_username || req.user.sub),
+        JSON.stringify({ id, email: rows[0].email, legal_hold: !!legal_hold }),
+        req.ip,
+      ]
+    );
+
+    reply.send(rows[0]);
+  });
+
+  // ─── Data Retention / GDPR Purge ────────────────────────────────────────
+
+  app.post('/retention/purge', adminGuard, async (req, reply) => {
+    let tenantId;
+    if (!isSuperAdmin(req.user)) {
+      const tenantRes = await pool.query(
+        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
+        [req.user.email || req.user.preferred_username]
+      );
+      tenantId = tenantRes.rows[0]?.tenant_id;
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    } else {
+      tenantId = req.body?.tenant_id;
+      if (!tenantId) return reply.status(400).send({ error: 'tenant_id required for superadmin' });
+    }
+
+    // Hard-delete messages older than 30 days that are marked as deleted (soft delete)
+    // AND neither the message itself nor its sender/recipient are under legal_hold.
+    const { rowCount } = await pool.query(`
+      DELETE FROM e2ee_messages 
+      WHERE tenant_id = $1 
+        AND deleted_at < NOW() - INTERVAL '30 days'
+        AND legal_hold = FALSE
+        AND from_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
+        AND to_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
+    `, [tenantId]);
+
+    // Also purge trash where both sender and recipient have deleted it long ago
+    const { rowCount: trashCount } = await pool.query(`
+      DELETE FROM e2ee_messages
+      WHERE tenant_id = $1
+        AND sender_deleted_at < NOW() - INTERVAL '30 days'
+        AND recipient_deleted_at < NOW() - INTERVAL '30 days'
+        AND legal_hold = FALSE
+        AND from_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
+        AND to_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
+    `, [tenantId]);
+
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'gdpr_purge', 'e2ee_messages', $3, $4)`,
+      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ purged_count: rowCount + trashCount }), req.ip]
+    );
+
+    reply.send({ ok: true, purged_count: rowCount + trashCount });
   });
 
   // ─── User Sessions ────────────────────────────────────────────────────────
@@ -620,7 +724,7 @@ export default async function adminRoutes(app) {
       await pool.query(
         `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
          VALUES ($1, $2, 'revoke_session', 'user', $3, $4)`,
-        [rows[0].tenant_id, req.user.sub, JSON.stringify({ target_user: rows[0].email }), req.ip]
+        [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ target_user: rows[0].email }), req.ip]
       );
 
       reply.send({ ok: true });
@@ -677,7 +781,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'verify', 'domain', $3, $4)`,
-      [domain.tenant_id, req.user.sub, JSON.stringify({ domain: domain.domain, verified }), req.ip]
+      [domain.tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ domain: domain.domain, verified }), req.ip]
     );
 
     if (!verified) {
@@ -705,7 +809,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'create', 'domain', $3, $4)`,
-      [tenant_id, req.user.sub, JSON.stringify({ id, domain }), req.ip]
+      [tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, domain }), req.ip]
     );
 
     reply.status(201).send(rows[0]);
@@ -752,6 +856,59 @@ export default async function adminRoutes(app) {
 
     const { rows } = await pool.query(query, params);
     reply.send({ data: rows, limit, offset });
+  });
+
+  app.get('/audit/export', adminGuard, async (req, reply) => {
+    // ── Tenant scoping: non-superadmins only see their own tenant's log ─────
+    const params = [];
+    let query = 'SELECT * FROM audit_log WHERE 1=1';
+
+    let tenantId;
+    if (!isSuperAdmin(req.user)) {
+      const tenantRes = await pool.query(
+        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
+        [req.user.email || req.user.preferred_username]
+      );
+      tenantId = tenantRes.rows[0]?.tenant_id;
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+      params.push(tenantId);
+      query += ` AND tenant_id = $${params.length}`;
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT 5000'; // Export up to 5k recent logs
+    const { rows } = await pool.query(query, params);
+
+    // CSV serialization
+    const header = ['ID', 'Tenant ID', 'Timestamp', 'Actor', 'Action', 'Resource', 'Details', 'IP'];
+    const csvRows = [header.join(',')];
+    
+    for (const row of rows) {
+      csvRows.push([
+        row.id,
+        row.tenant_id,
+        row.created_at.toISOString(),
+        `"${row.actor}"`,
+        row.action,
+        row.resource,
+        `"${JSON.stringify(row.details).replace(/"/g, '""')}"`,
+        row.ip || ''
+      ].join(','));
+    }
+
+    const csvData = csvRows.join('\n');
+
+    logSiemEvent({
+      tenantId: tenantId || 'system',
+      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email || req.user.preferred_username,
+      action: 'export_data',
+      resource: 'audit_log',
+      details: { format: 'csv', records: rows.length },
+      ip: req.ip
+    });
+
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', 'attachment; filename="audit_export.csv"');
+    reply.send(csvData);
   });
 
   app.get('/metrics', adminGuard, async (req, reply) => {
@@ -828,13 +985,13 @@ export default async function adminRoutes(app) {
     const { rows } = await pool.query(
       `INSERT INTO soar_playbooks (id, tenant_id, name, trigger_type, action_type, config, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [id, tenantId, name, trigger_type, action_type, JSON.stringify(config), req.user.sub]
+      [id, tenantId, name, trigger_type, action_type, JSON.stringify(config), (req.user.email || req.user.preferred_username || req.user.sub)]
     );
 
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'create', 'soar_playbook', $3, $4)`,
-      [tenantId, req.user.sub, JSON.stringify({ id, name, trigger_type, action_type }), req.ip]
+      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, trigger_type, action_type }), req.ip]
     );
 
     reply.status(201).send(rows[0]);
@@ -876,7 +1033,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'update', 'soar_playbook', $3, $4)`,
-      [rows[0].tenant_id, req.user.sub, JSON.stringify({ id, name, status }), req.ip]
+      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, status }), req.ip]
     );
 
     reply.send(rows[0]);
@@ -893,7 +1050,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'delete', 'soar_playbook', $3, $4)`,
-      [rows[0].tenant_id, req.user.sub, JSON.stringify({ id }), req.ip]
+      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id }), req.ip]
     );
 
     reply.send({ ok: true });
@@ -952,7 +1109,7 @@ export default async function adminRoutes(app) {
       await pool.query(
         `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
          VALUES ($1, $2, 'create', 'alias', $3, $4)`,
-        [tenantId, req.user.sub, JSON.stringify({ alias_email, members }), req.ip]
+        [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email, members }), req.ip]
       );
 
       reply.status(201).send(rows[0]);
@@ -982,7 +1139,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'update', 'alias', $3, $4)`,
-      [rows[0].tenant_id, req.user.sub, JSON.stringify({ alias_email: rows[0].alias_email, members }), req.ip]
+      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email: rows[0].alias_email, members }), req.ip]
     );
 
     reply.send(rows[0]);
@@ -1000,7 +1157,7 @@ export default async function adminRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'delete', 'alias', $3, $4)`,
-      [rows[0].tenant_id, req.user.sub, JSON.stringify({ alias_email: rows[0].alias_email }), req.ip]
+      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email: rows[0].alias_email }), req.ip]
     );
 
     reply.send({ ok: true });

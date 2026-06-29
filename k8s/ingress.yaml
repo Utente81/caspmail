@@ -6,7 +6,8 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: traefik
     # Traefik specific annotations for routing
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: caspermail-strip-api-prefix@kubernetescrd
 spec:
   rules:
   - host: secure.internal
@@ -36,3 +37,13 @@ spec:
             name: casper-keycloak
             port:
               number: 8080
+  - host: db.secure.internal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: pgadmin
+            port:
+              number: 80

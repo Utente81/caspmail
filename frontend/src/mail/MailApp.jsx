@@ -71,7 +71,7 @@ export default function MailApp() {
           sessionStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'User')
           sessionStorage.setItem('caspmail_user_email', payload.email || payload.preferred_username || '')
           const roles = payload?.realm_access?.roles || []
-          const role = roles.includes('admin') ? 'Admin'
+          const role = (roles.includes('admin') || roles.includes('casper_admin')) ? 'Admin'
             : roles.includes('soc_analyst') ? 'SOC Analyst'
             : roles.includes('soc_manager') ? 'SOC Manager'
             : 'User'

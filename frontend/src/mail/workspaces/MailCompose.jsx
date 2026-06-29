@@ -86,8 +86,77 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
     if (!keyPair) { setError('Generate your security keys first (Security Keys tab).'); return }
 
     setError(null)
-    setSending(true)
-    setSent(false)
+    // DLP Check (Client-side) - Zero Trust: runs on ALL outgoing messages
+    // Credit card approx regex (13-16 digits with optional spaces/dashes)
+    const ccRegex = /\b(?:\d[ -]*?){13,16}\b/;
+    // Italian Codice Fiscale approx regex
+    const cfRegex = /\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/i;
+    // IBAN approx regex (European formats)
+    const ibanRegex = /\b[A-Z]{2}[0-9]{2}(?:[ ]?[0-9a-zA-Z]){11,28}\b/;
+    // US Social Security Number
+    const ssnRegex = /\b(?!(000|666|9))\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/;
+    // API Keys / Secrets (AWS, GitHub, Generic High Entropy)
+    const apiKeyRegex = /(AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|xoxb-[0-9]{10,13}-[a-zA-Z0-9]{24})/i;
+    const textToScan = subject + " " + body;
+    
+    let matchedRule = null;
+    let matchedData = null;
+    
+    const ccMatch = textToScan.match(ccRegex);
+    if (ccMatch) {
+      // A naive check to ensure it's actually numbers and not just random text with dashes
+      const rawNums = ccMatch[0].replace(/[ -]/g, '');
+      if (rawNums.length >= 13 && rawNums.length <= 16) {
+        matchedRule = "Credit Card (PCI-DSS)";
+        matchedData = ccMatch[0];
+      }
+    } 
+    
+    if (!matchedRule) {
+      const cfMatch = textToScan.match(cfRegex);
+      if (cfMatch) {
+        matchedRule = "Codice Fiscale (PII)";
+        matchedData = cfMatch[0];
+      }
+    }
+    
+    if (!matchedRule) {
+      const ibanMatch = textToScan.match(ibanRegex);
+      if (ibanMatch) {
+        matchedRule = "IBAN (Financial)";
+        matchedData = ibanMatch[0];
+      }
+    }
+
+    if (!matchedRule) {
+      const ssnMatch = textToScan.match(ssnRegex);
+      if (ssnMatch) {
+        matchedRule = "Social Security Number (PII)";
+        matchedData = ssnMatch[0];
+      }
+    }
+
+    if (!matchedRule) {
+      const apiMatch = textToScan.match(apiKeyRegex);
+      if (apiMatch) {
+        matchedRule = "API Key / Secret (Security)";
+        matchedData = "********"; // Redact the actual secret in the alert
+      }
+    }
+
+    if (matchedRule) {
+      // Send telemetry to SOC
+      try {
+        await apiFetch('/api/v4/soc/telemetry/dlp', {
+          method: 'POST',
+          body: JSON.stringify({ to_email: to, subject, matched_data: matchedData, rule_name: matchedRule })
+        });
+      } catch (e) { console.error("SOC telemetry failed", e); }
+      
+      setError(`DLP Blocked: Sensitive data detected (${matchedRule}). Corporate policy prohibits sending this (Zero Trust).`);
+      setSending(false);
+      return;
+    }
 
     try {
       // Fetch recipient's public key

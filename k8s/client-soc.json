@@ -1,0 +1,16 @@
+{
+  "clientId": "caspermail-soc",
+  "enabled": true,
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": true,
+  "directAccessGrantsEnabled": true,
+  "redirectUris": [
+    "https://secure.internal/*",
+    "https://soc.secure.internal/*",
+    "http://localhost:5173/*"
+  ],
+  "webOrigins": [
+    "+"
+  ]
+}

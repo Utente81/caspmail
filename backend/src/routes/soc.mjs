@@ -1,6 +1,9 @@
 import pool from '../db/pool.mjs';
 import { requireRole } from '../auth/verify.mjs';
 import { sendMail } from '../mailer.mjs';
+import { logSiemEvent } from '../audit/siem.mjs';
+import { requireAuth } from '../auth/verify.mjs';
+
 const SOC_ROLES = ['soc_analyst', 'soc_manager', 'soc_admin', 'admin', 'casper_admin'];
 export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
@@ -12,6 +15,7 @@ export default async function socRoutes(app) {
       return requireRole(SOC_ROLES)(req, reply);
     },
   };
+  const authGuard = { preHandler: requireAuth };
   async function getTenantId(req) {
     const user = req.user;
     const { rows } = await pool.query(
@@ -21,7 +25,7 @@ export default async function socRoutes(app) {
     if (rows[0]?.tenant_id) return rows[0].tenant_id;
     const roles = user?.realm_access?.roles || user?.roles || [];
     if (roles.some((role) => ['admin', 'casper_admin'].includes(role))) {
-      return req.query?.tenant_id || 'acme-corp';
+      return req.query?.tenant_id || req.headers['x-tenant-id'] || null;
     }
     return null;
   }
@@ -96,8 +100,16 @@ export default async function socRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'update_status', 'soc_alert', $3, $4)`,
-      [tenantId, req.user.sub, JSON.stringify({ alert_id: req.params.id, status }), req.ip]
+      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alert_id: req.params.id, status }), req.ip]
     );
+    logSiemEvent({
+      tenantId,
+      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email,
+      action: 'click_threat_alert',
+      resource: req.params.id,
+      details: { status },
+      ip: req.ip
+    });
     reply.send(rows[0]);
   });
   app.patch('/alerts/:id', socGuard, async (req, reply) => {
@@ -113,6 +125,14 @@ export default async function socRoutes(app) {
       [status, id, tenantId]
     );
     if (rowCount === 0) return reply.status(404).send({ error: 'Alert not found' });
+    logSiemEvent({
+      tenantId,
+      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email,
+      action: 'click_threat_alert',
+      resource: id,
+      details: { status },
+      ip: req.ip
+    });
     reply.send(rows[0]);
   });
   // ─── Event Ingestion (internal/agent use — requires SOC role or API key header) ───
@@ -155,6 +175,46 @@ export default async function socRoutes(app) {
       }).catch(() => {});
     }
     reply.status(201).send(event);
+  });
+
+  // ─── DLP Telemetry (Client-side DLP reporting) ──────────────────────────
+  app.post('/telemetry/dlp', authGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    
+    const { to_email, subject, matched_data, rule_name } = req.body || {};
+    
+    // Log the data exfiltration attempt as a SOC Event
+    const message = `DLP Blocked: Attempted data exfiltration to external domain (${to_email})`;
+    const rawData = {
+      recipient: to_email,
+      rule_name: rule_name,
+      matched_data: matched_data // In a real system, this would be masked
+    };
+
+    const { rows: evRows } = await pool.query(
+      `INSERT INTO soc_events (tenant_id, type, severity, source_ip, user_email, message, raw)
+       VALUES ($1, 'data_exfil', 'critical', $2, $3, $4, $5) RETURNING *`,
+      [tenantId, req.ip, req.user.email || req.user.preferred_username, message, JSON.stringify(rawData)]
+    );
+    
+    const event = evRows[0];
+    
+    // Auto-create an alert
+    const { rows: alertRows } = await pool.query(
+      `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
+       VALUES ($1, $2, 'critical', $3, 'open') RETURNING *`,
+      [tenantId, event.id, message]
+    );
+    
+    logSiemEvent('data_exfil', {
+      user_email: req.user.email || req.user.preferred_username,
+      recipient: to_email,
+      rule_name: rule_name,
+      severity: 'critical'
+    }, req);
+    
+    reply.status(201).send({ ok: true, event_id: event.id });
   });
   // ─── Events / SIEM ────────────────────────────────────────────────────────
   app.get('/events', socGuard, async (req, reply) => {
@@ -381,20 +441,20 @@ export default async function socRoutes(app) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     send('connected', { ts: new Date().toISOString() });
-    let lastAlertId = null;
-    let lastEventId = null;
-    // Fetch the latest IDs to use as cursor
+    let lastAlertTime = null;
+    let lastEventTime = null;
+    // Fetch the 10th most recent timestamp to use as cursor so recent events are shown
     const { rows: initAlerts } = await pool.query(
-      'SELECT id FROM soc_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1',
+      'SELECT created_at FROM soc_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1 OFFSET 10',
       [tenantId]
     );
-    lastAlertId = initAlerts[0]?.id || null;
+    lastAlertTime = initAlerts[0]?.created_at || null;
 
     const { rows: initEvents } = await pool.query(
-      'SELECT id FROM soc_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1',
+      'SELECT created_at FROM soc_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1 OFFSET 50',
       [tenantId]
     );
-    lastEventId = initEvents[0]?.id || null;
+    lastEventTime = initEvents[0]?.created_at || null;
 
     const interval = setInterval(async () => {
       try {
@@ -406,11 +466,11 @@ export default async function socRoutes(app) {
           WHERE a.tenant_id = $1 AND a.status = 'open'
         `;
         const alertParams = [tenantId];
-        if (lastAlertId) { alertParams.push(lastAlertId); alertQuery += ` AND a.id > $${alertParams.length}`; }
+        if (lastAlertTime) { alertParams.push(lastAlertTime); alertQuery += ` AND a.created_at > $${alertParams.length}`; }
         alertQuery += ' ORDER BY a.created_at ASC LIMIT 10';
         const { rows: alerts } = await pool.query(alertQuery, alertParams);
         if (alerts.length > 0) {
-          lastAlertId = alerts[alerts.length - 1].id;
+          lastAlertTime = alerts[alerts.length - 1].created_at;
           alerts.forEach(row => send('alert', row));
         }
 
@@ -420,11 +480,11 @@ export default async function socRoutes(app) {
           WHERE tenant_id = $1
         `;
         const eventParams = [tenantId];
-        if (lastEventId) { eventParams.push(lastEventId); eventQuery += ` AND id > $${eventParams.length}`; }
+        if (lastEventTime) { eventParams.push(lastEventTime); eventQuery += ` AND created_at > $${eventParams.length}`; }
         eventQuery += ' ORDER BY created_at ASC LIMIT 50';
         const { rows: events } = await pool.query(eventQuery, eventParams);
         if (events.length > 0) {
-          lastEventId = events[events.length - 1].id;
+          lastEventTime = events[events.length - 1].created_at;
           events.forEach(row => send('event', row));
         }
 
@@ -487,7 +547,7 @@ export default async function socRoutes(app) {
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (tenant_id, framework, control_id)
        DO UPDATE SET status=$4, updated_by=$5, updated_at=NOW()`,
-      [tenantId, req.params.framework, control_id, status, req.user.sub]
+      [tenantId, req.params.framework, control_id, status, (req.user.email || req.user.preferred_username || req.user.sub)]
     );
     reply.send({ ok: true });
   });
@@ -515,7 +575,7 @@ export default async function socRoutes(app) {
     const { rows } = await pool.query(
       `INSERT INTO soar_playbooks (tenant_id, name, trigger_type, action_type, config, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [tenantId, name, trigger_type, action_type, JSON.stringify(config), status, req.user.sub]
+      [tenantId, name, trigger_type, action_type, JSON.stringify(config), status, (req.user.email || req.user.preferred_username || req.user.sub)]
     );
     reply.status(201).send(rows[0]);
   });
@@ -557,7 +617,7 @@ export default async function socRoutes(app) {
     );
     const runId = runRows[0].id;
     // Execute action asynchronously (fire-and-forget)
-    executeAction(pb, runId, tenantId, req.user.sub).catch(() => {});
+    executeAction(pb, runId, tenantId, (req.user.email || req.user.preferred_username || req.user.sub)).catch(() => {});
     reply.send({ ok: true, run_id: runId });
   });
   // Playbook run history

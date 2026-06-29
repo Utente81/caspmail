@@ -1,0 +1,15 @@
+{
+  "clientId": "caspermail-admin",
+  "enabled": true,
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": true,
+  "directAccessGrantsEnabled": true,
+  "redirectUris": [
+    "https://secure.internal/*",
+    "http://localhost:5173/*"
+  ],
+  "webOrigins": [
+    "+"
+  ]
+}

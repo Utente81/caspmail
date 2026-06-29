@@ -251,6 +251,11 @@ export default function MailDashboard() {
               <ShieldCheck size={13} /> SOC Dashboard
             </a>
           )}
+          {userRole === 'Admin' && (
+            <a href="/console/admin" className="mail-footer-link">
+              <Settings size={13} /> Admin Dashboard
+            </a>
+          )}
           <div className="mail-user-info">
             <div className="mail-user-avatar"><User size={12} /></div>
             <div className="mail-user-meta">
@@ -293,6 +298,11 @@ export default function MailDashboard() {
                   {roles && (
                     <a href="/console/soc" className="mail-dropdown-item">
                       <ShieldCheck size={13} /> SOC Dashboard
+                    </a>
+                  )}
+                  {userRole === 'Admin' && (
+                    <a href="/console/admin" className="mail-dropdown-item">
+                      <Settings size={13} /> Admin Dashboard
                     </a>
                   )}
                   <button className="mail-dropdown-item danger" onClick={handleLogout}>

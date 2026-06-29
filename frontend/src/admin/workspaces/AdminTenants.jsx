@@ -35,6 +35,8 @@ export default function AdminTenants() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState(null)
 
+  const [editForm, setEditForm] = useState(null)
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -59,6 +61,24 @@ export default function AdminTenants() {
       setRows(r => [tenant, ...r])
       setShowNew(false)
       setForm({ id: '', name: '', plan: 'starter', region: 'eu-west-1' })
+    } catch (e) { setFormError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  async function handleEdit(e) {
+    e.preventDefault()
+    if (!editForm.name) { setFormError('Name is required'); return }
+    setSaving(true); setFormError(null)
+    try {
+      const res = await api(`/tenants/${editForm.id}`, { method: 'PUT', body: JSON.stringify({
+        name: editForm.name,
+        plan: editForm.plan,
+        status: editForm.status
+      }) })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.statusText) }
+      const updatedTenant = await res.json()
+      setRows(r => r.map(t => t.id === updatedTenant.id ? updatedTenant : t))
+      setEditForm(null)
     } catch (e) { setFormError(e.message) }
     finally { setSaving(false) }
   }
@@ -88,20 +108,20 @@ export default function AdminTenants() {
         <table className="adm-table">
           <thead>
             <tr>
-              <th>ID</th><th>Name</th><th>Plan</th><th>Region</th><th>Status</th><th>Created</th>
+              <th>ID</th><th>Name</th><th>Plan</th><th>Region</th><th>Status</th><th>Created</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               Array.from({ length: 5 }, (_, i) => (
                 <tr key={i}>
-                  {Array.from({ length: 6 }, (_, j) => (
+                  {Array.from({ length: 7 }, (_, j) => (
                     <td key={j}><div className="adm-skeleton adm-skeleton-row" /></td>
                   ))}
                 </tr>
               ))
             ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="adm-empty">No tenants yet. Create the first one.</td></tr>
+              <tr><td colSpan={7} className="adm-empty">No tenants yet. Create the first one.</td></tr>
             ) : rows.map(t => (
               <tr key={t.id}>
                 <td><code className="adm-code">{t.id}</code></td>
@@ -110,6 +130,25 @@ export default function AdminTenants() {
                 <td>{t.region}</td>
                 <td><span className={`adm-badge adm-badge-status ${t.status === 'active' ? 'active' : 'inactive'}`}>{t.status}</span></td>
                 <td className="adm-td-date">{new Date(t.created_at).toLocaleDateString()}</td>
+                <td style={{ display: 'flex', gap: '8px' }}>
+                  <button className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => {
+                    setEditForm({ id: t.id, name: t.name, plan: t.plan || 'starter', status: t.status })
+                  }}>
+                    Edit
+                  </button>
+                  <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ color: '#ef4444' }} onClick={async () => {
+                    if (!confirm(`Are you sure you want to delete tenant ${t.name}?`)) return;
+                    setLoading(true);
+                    try {
+                      const res = await api(`/tenants/${t.id}`, { method: 'DELETE' });
+                      if (!res.ok) throw new Error('Failed to delete tenant');
+                      setRows(r => r.filter(x => x.id !== t.id));
+                    } catch (e) { setError(e.message) }
+                    finally { setLoading(false) }
+                  }}>
+                    Delete
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -149,6 +188,44 @@ export default function AdminTenants() {
               <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setShowNew(false)}>Cancel</button>
               <button type="submit" className="adm-btn adm-btn-primary" disabled={saving}>
                 {saving ? 'Creating…' : <><Check size={14} /> Create Tenant</>}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {editForm && (
+        <Modal title="Edit Tenant" onClose={() => setEditForm(null)}>
+          <form className="adm-form" onSubmit={handleEdit}>
+            {formError && <div className="adm-alert adm-alert-error"><AlertTriangle size={14} />{formError}</div>}
+            <div className="adm-field">
+              <label>Tenant ID</label>
+              <input className="adm-input" value={editForm.id} disabled />
+            </div>
+            <div className="adm-field">
+              <label>Display Name <span className="adm-required">*</span></label>
+              <input className="adm-input" placeholder="Acme Corporation" value={editForm.name}
+                onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="adm-field-row">
+              <div className="adm-field">
+                <label>Plan</label>
+                <select className="adm-select" value={editForm.plan} onChange={e => setEditForm(f => ({ ...f, plan: e.target.value }))}>
+                  {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="adm-field">
+                <label>Status</label>
+                <select className="adm-select" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+              </div>
+            </div>
+            <div className="adm-modal-footer">
+              <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setEditForm(null)}>Cancel</button>
+              <button type="submit" className="adm-btn adm-btn-primary" disabled={saving}>
+                {saving ? 'Saving…' : <><Check size={14} /> Save Changes</>}
               </button>
             </div>
           </form>

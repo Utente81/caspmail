@@ -290,6 +290,25 @@ export default async function adminRoutes(app) {
 };
 
   
+// ─── Multi-Tenancy Segregation ──────────────────────────────────────────────
+async function getEnforcedTenantId(req, requestedTenantId, isGlobalAllowed = false) {
+  if (isSuperAdmin(req.user)) {
+    if (requestedTenantId) return requestedTenantId;
+    if (isGlobalAllowed) return null;
+    throw new Error('Tenant ID is required for this operation');
+  }
+
+  const tenantRes = await pool.query(
+    'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
+    [req.user.email || req.user.preferred_username]
+  );
+  const userTenant = tenantRes.rows[0]?.tenant_id;
+  if (!userTenant) {
+    throw new Error('User has no tenant association');
+  }
+  return userTenant;
+}
+
 const superAdminGuard = {
   preHandler: async (req, reply) => {
     if (!req.headers.authorization && req.query?.token) {
@@ -298,19 +317,6 @@ const superAdminGuard = {
     return requireRole(SUPERADMIN_ROLES)(req, reply);
   }
 };
-
-async function getEnforcedTenantId(req, requestedTenantId) {
-  if (isSuperAdmin(req.user)) {
-    if (!requestedTenantId) throw new Error('SUPERADMIN_MISSING_TENANT');
-    return requestedTenantId;
-  }
-  const tenantRes = await pool.query(
-    'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-    [req.user.email || req.user.preferred_username]
-  );
-  if (!tenantRes.rows[0]?.tenant_id) throw new Error('TENANT_ADMIN_MISSING_TENANT');
-  return tenantRes.rows[0].tenant_id;
-}
 
   // ─── Summary ──────────────────────────────────────────────────────────────
 
@@ -328,7 +334,7 @@ async function getEnforcedTenantId(req, requestedTenantId) {
 
   // ─── Tenants ──────────────────────────────────────────────────────────────
 
-  app.get('/tenants', superAdminGuard, async (req, reply) => {
+  app.get('/tenants', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset = parseInt(req.query.offset || '0', 10);
     const search = req.query.search?.trim();
@@ -413,8 +419,12 @@ async function getEnforcedTenantId(req, requestedTenantId) {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
     const search    = req.query.search?.trim();
-    const tenant_id = await getEnforcedTenantId(req, req.query.tenant_id).catch(e => null);
-    if (!tenant_id) return reply.status(403).send({ error: 'Tenant restriction' });
+    let tenant_id;
+    try {
+      tenant_id = await getEnforcedTenantId(req, req.query.tenant_id, true);
+    } catch (e) {
+      return reply.status(403).send({ error: e.message });
+    }
     const status    = req.query.status;
 
     let query = `SELECT * FROM users WHERE COALESCE(status, 'active') <> 'deleted'`;
@@ -441,14 +451,15 @@ async function getEnforcedTenantId(req, requestedTenantId) {
   });
 
   app.post('/users', adminGuard, async (req, reply) => {
-    let { tenant_id, email,
+    let { tenant_id,
+      email,
       name = '',
       role = 'user',
       quota_mb = 1024,
       password = '',
     } = req.body || {};
 
-    tenant_id = await getEnforcedTenantId(req, tenant_id).catch(e => null);
+    try { tenant_id = await getEnforcedTenantId(req, tenant_id, false); } catch (e) { return reply.status(403).send({ error: e.message }); }
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
     }
@@ -814,7 +825,8 @@ async function getEnforcedTenantId(req, requestedTenantId) {
   });
 
   app.post('/domains', adminGuard, async (req, reply) => {
-    const { tenant_id, domain, is_primary = false } = req.body || {};
+    let { tenant_id, domain, is_primary = false } = req.body || {};
+    try { tenant_id = await getEnforcedTenantId(req, tenant_id, false); } catch (e) { return reply.status(403).send({ error: e.message }); }
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }

@@ -289,9 +289,32 @@ export default async function adminRoutes(app) {
   }
 };
 
+  
+const superAdminGuard = {
+  preHandler: async (req, reply) => {
+    if (!req.headers.authorization && req.query?.token) {
+      req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    return requireRole(SUPERADMIN_ROLES)(req, reply);
+  }
+};
+
+async function getEnforcedTenantId(req, requestedTenantId) {
+  if (isSuperAdmin(req.user)) {
+    if (!requestedTenantId) throw new Error('SUPERADMIN_MISSING_TENANT');
+    return requestedTenantId;
+  }
+  const tenantRes = await pool.query(
+    'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
+    [req.user.email || req.user.preferred_username]
+  );
+  if (!tenantRes.rows[0]?.tenant_id) throw new Error('TENANT_ADMIN_MISSING_TENANT');
+  return tenantRes.rows[0].tenant_id;
+}
+
   // ─── Summary ──────────────────────────────────────────────────────────────
 
-  app.get('/summary', adminGuard, async (req, reply) => {
+  app.get('/summary', superAdminGuard, async (req, reply) => {
     const { rows } = await pool.query(`
       SELECT
         (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
@@ -305,7 +328,7 @@ export default async function adminRoutes(app) {
 
   // ─── Tenants ──────────────────────────────────────────────────────────────
 
-  app.get('/tenants', adminGuard, async (req, reply) => {
+  app.get('/tenants', superAdminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset = parseInt(req.query.offset || '0', 10);
     const search = req.query.search?.trim();
@@ -325,7 +348,7 @@ export default async function adminRoutes(app) {
     reply.send({ data: rows, limit, offset });
   });
 
-  app.post('/tenants', adminGuard, async (req, reply) => {
+  app.post('/tenants', superAdminGuard, async (req, reply) => {
     const { name, status = 'active', plan = 'basic' } = req.body || {};
     if (!name) return reply.status(400).send({ error: 'name is required' });
 
@@ -344,7 +367,7 @@ export default async function adminRoutes(app) {
     reply.status(201).send(rows[0]);
   });
 
-  app.put('/tenants/:id', adminGuard, async (req, reply) => {
+  app.put('/tenants/:id', superAdminGuard, async (req, reply) => {
     const { id } = req.params;
     const { name, status, plan } = req.body || {};
 
@@ -365,7 +388,7 @@ export default async function adminRoutes(app) {
     reply.send(rows[0]);
   });
 
-  app.delete('/tenants/:id', adminGuard, async (req, reply) => {
+  app.delete('/tenants/:id', superAdminGuard, async (req, reply) => {
     const { id } = req.params;
     
     const { rowCount } = await pool.query(
@@ -390,7 +413,8 @@ export default async function adminRoutes(app) {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
     const search    = req.query.search?.trim();
-    const tenant_id = req.query.tenant_id;
+    const tenant_id = await getEnforcedTenantId(req, req.query.tenant_id).catch(e => null);
+    if (!tenant_id) return reply.status(403).send({ error: 'Tenant restriction' });
     const status    = req.query.status;
 
     let query = `SELECT * FROM users WHERE COALESCE(status, 'active') <> 'deleted'`;
@@ -417,15 +441,14 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/users', adminGuard, async (req, reply) => {
-    const {
-      tenant_id,
-      email,
+    let { tenant_id, email,
       name = '',
       role = 'user',
       quota_mb = 1024,
       password = '',
     } = req.body || {};
 
+    tenant_id = await getEnforcedTenantId(req, tenant_id).catch(e => null);
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
     }
@@ -911,7 +934,7 @@ export default async function adminRoutes(app) {
     reply.send(csvData);
   });
 
-  app.get('/metrics', adminGuard, async (req, reply) => {
+  app.get('/metrics', superAdminGuard, async (req, reply) => {
     let tenantId;
     if (!isSuperAdmin(req.user)) {
       const tenantRes = await pool.query(

@@ -26,6 +26,7 @@ CasperMail is a next-generation, highly secure enterprise communication and secu
 - **Role-Based Access Control (RBAC)**: Strict separation of duties (e.g., SOC Analysts cannot read user emails; Standard users cannot view the threat map).
 
 ### 4. ⚙️ Admin & Compliance Console
+- **SaaS Multi-Tenancy**: Native logical segregation. Each tenant's data is isolated. Tenant Administrators can only manage their own department/company, while Super Admins (`casper_admin`) maintain global visibility.
 - **Centralized Management**: Manage domains, tenants, users, and aliases with strict Cross-Tenant data isolation.
 - **Immutable Audit Trails**: High-performance, cryptographically secure audit logs tracing every action to a verified Keycloak identity.
 - **Legal Hold & GDPR Retention**: Enforce legal holds to prevent message destruction, or execute bulk GDPR purges for non-held data.

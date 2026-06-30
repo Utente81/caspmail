@@ -184,7 +184,7 @@ export default async function socRoutes(app) {
              VALUES ($1,$2,$3,'running') RETURNING id`,
             [pb.id, tenantId, triggerKey]
           ).then(({ rows }) => {
-            executeAction(pb, rows[0].id, tenantId, 'soar-auto').catch(() => {});
+            executeAction(pb, rows[0].id, tenantId, 'soar-auto', event).catch(() => {});
           }).catch(() => {});
         }
       }).catch(() => {});
@@ -632,7 +632,7 @@ export default async function socRoutes(app) {
     );
     const runId = runRows[0].id;
     // Execute action asynchronously (fire-and-forget)
-    executeAction(pb, runId, tenantId, (req.user.email || req.user.preferred_username || req.user.sub)).catch(() => {});
+    executeAction(pb, runId, tenantId, (req.user.email || req.user.preferred_username || req.user.sub), null).catch(() => {});
     reply.send({ ok: true, run_id: runId }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
   // Playbook run history
@@ -646,21 +646,24 @@ export default async function socRoutes(app) {
     );
     reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
-  function isSafeUrl(urlStr) {
-    try {
-      const parsed = new URL(urlStr);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-      const host = parsed.hostname;
-      if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
-        return false;
-      }
-      return true;
-    } catch {
+}
+
+function isSafeUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname;
+    if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
       return false;
     }
+    return true;
+  } catch {
+    return false;
   }
-  // Internal: execute a playbook action
-  async function executeAction(pb, runId, tenantId, actor) {
+}
+
+// Internal: execute a playbook action
+async function executeAction(pb, runId, tenantId, actor, event = null) {
     let result = {};
     let status = 'success';
     try {
@@ -690,8 +693,8 @@ export default async function socRoutes(app) {
           break;
         }
         case 'disable_user': {
-          const email = pb.config?.user_email;
-          if (!email) throw new Error('No user_email in config');
+          const email = pb.config?.user_email || event?.user_email;
+          if (!email) throw new Error('No user_email in config or triggering event');
           await pool.query(
             "UPDATE users SET status='disabled' WHERE email=$1 AND tenant_id=$2",
             [email, tenantId]
@@ -702,6 +705,24 @@ export default async function socRoutes(app) {
             [tenantId, actor, JSON.stringify({ email, playbook: pb.name })]
           );
           result = { disabled: email };
+          break;
+        }
+        case 'block_ip': {
+          const targetIp = pb.config?.ip || event?.source_ip;
+          if (!targetIp) throw new Error('No target IP in config or triggering event');
+          await pool.query(
+            `INSERT INTO soc_blocked_ips (tenant_id, ip, reason, created_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+            [tenantId, targetIp, pb.name, actor]
+          );
+          const { blockIp } = await import('../app.mjs');
+          blockIp(targetIp);
+          
+          await pool.query(
+            `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+             VALUES ($1,$2,'block_ip','firewall',$3,'soar')`,
+            [tenantId, actor, JSON.stringify({ ip: targetIp, playbook: pb.name })]
+          );
+          result = { blocked_ip: targetIp };
           break;
         }
         case 'send_email': {
@@ -750,7 +771,6 @@ export default async function socRoutes(app) {
       [status, pb.id]
     );
   }
-}
 
 export function startSoarWorker(app) {
   app.log.info('Starting SOAR Lite Worker...');
@@ -781,6 +801,54 @@ export function startSoarWorker(app) {
         );
         app.log.info({ ip: row.source_ip, tenant_id: row.tenant_id }, 'SOAR Lite: Created new case');
       }
+
+      // Check UEBA risks and fire playbooks
+      const { rows: uebaRows } = await pool.query(`
+        SELECT tenant_id, user_email,
+        (
+          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) * 40 +
+          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END) * 20 +
+          SUM(CASE WHEN severity='medium' THEN 1 ELSE 0 END) * 5 +
+          SUM(CASE WHEN severity='low' THEN 1 ELSE 0 END) +
+          COUNT(DISTINCT source_ip::text) * 3
+        ) AS risk_score
+        FROM soc_events
+        WHERE created_at > NOW() - INTERVAL '30 days' AND user_email IS NOT NULL
+        GROUP BY tenant_id, user_email
+        HAVING (
+          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) * 40 +
+          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END) * 20 +
+          SUM(CASE WHEN severity='medium' THEN 1 ELSE 0 END) * 5 +
+          SUM(CASE WHEN severity='low' THEN 1 ELSE 0 END) +
+          COUNT(DISTINCT source_ip::text) * 3
+        ) >= 50
+      `);
+
+      for (const row of uebaRows) {
+        const trigger = row.risk_score >= 75 ? 'ueba_risk_75' : 'ueba_risk_50';
+        
+        const { rows: playbooks } = await pool.query(
+          `SELECT * FROM soar_playbooks WHERE tenant_id=$1 AND trigger_type=$2 AND status='active'`,
+          [row.tenant_id, trigger]
+        );
+        
+        for (const pb of playbooks) {
+          const { rows: recentRuns } = await pool.query(`
+            SELECT 1 FROM soar_runs 
+            WHERE playbook_id=$1 AND created_at > NOW() - INTERVAL '1 hour'
+            AND result::text LIKE '%' || $2 || '%'
+          `, [pb.id, row.user_email]);
+          
+          if (recentRuns.length === 0) {
+            const { rows: runRows } = await pool.query(
+              `INSERT INTO soar_runs (playbook_id, tenant_id, trigger_type, status) VALUES ($1,$2,$3,'running') RETURNING id`,
+              [pb.id, row.tenant_id, trigger]
+            );
+            executeAction(pb, runRows[0].id, row.tenant_id, 'soar-ueba', { user_email: row.user_email }).catch(() => {});
+          }
+        }
+      }
+
     } catch (err) {
       app.log.error({ err }, 'SOAR Worker error');
     }

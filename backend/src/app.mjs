@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 
 import { runMigrations } from './db/migrate.mjs';
+import pool from './db/pool.mjs';
 import healthRoutes from './routes/health.mjs';
 import adminRoutes from './routes/admin.mjs';
 import socRoutes, { startSoarWorker } from './routes/soc.mjs';
@@ -11,6 +12,12 @@ import mailRoutes from './routes/mail.mjs';
 import organizationRoutes from './routes/organization.mjs';
 import contactsRoutes from './routes/contacts.mjs';
 import { startSimulator } from './soc_simulator.mjs';
+
+// Global cache for SOAR Application Firewall
+export const blockedIps = new Set();
+export function blockIp(ip) {
+  blockedIps.add(ip);
+}
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -54,9 +61,10 @@ await app.register(cors, {
   credentials: true,
 });
 
-// ─── Rate Limiting (layered, enterprise-grade) ───────────────────────────────
+// ─── Rate Limiting & Firewall (layered, enterprise-grade) ─────────────────
 //
-//  Global:          200 req/min per real IP   (broad protection)
+//  Global Firewall: Blocks IPs requested by SOAR Playbooks
+//  Global Rate Limiting: 200 req/min per real IP   (broad protection)
 //  Auth endpoints:   20 req/min per real IP   (brute-force mitigation)
 //  Write endpoints:  60 req/min per real IP   (mutation protection)
 //
@@ -65,6 +73,14 @@ await app.register(cors, {
 function realIp(req) {
   return req.headers['x-real-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
 }
+
+// Global Firewall Hook
+app.addHook('onRequest', async (req, reply) => {
+  const ip = realIp(req);
+  if (blockedIps.has(ip)) {
+    return reply.status(403).send({ error: 'Forbidden', message: 'Your IP address has been blocked by SOC policies.' });
+  }
+});
 
 // Global rate-limit (applied to all routes via plugin)
 await app.register(rateLimit, {
@@ -150,6 +166,13 @@ try {
   app.log.info('Running database migrations...');
   await runMigrations();
   app.log.info('Migrations complete.');
+
+  // Load blocked IPs into memory firewall
+  const { rows: blockedRows } = await pool.query('SELECT ip FROM soc_blocked_ips');
+  for (const row of blockedRows) {
+    blockedIps.add(row.ip);
+  }
+  app.log.info(`Firewall: Loaded ${blockedIps.size} blocked IPs from database.`);
 
   await app.listen({ port: PORT, host: HOST });
   app.log.info(`CaspMail backend listening on ${HOST}:${PORT}`);

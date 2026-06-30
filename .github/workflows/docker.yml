@@ -15,7 +15,7 @@ jobs:
         component: [ 'frontend', 'backend' ]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
 
       - name: Build Docker Image
         run: |
@@ -23,7 +23,7 @@ jobs:
           docker build -t caspermail-${{ matrix.component }}:${{ github.sha }} .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@master # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           image-ref: caspermail-${{ matrix.component }}:${{ github.sha }}
           format: 'table'

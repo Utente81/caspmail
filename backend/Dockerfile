@@ -1,4 +1,5 @@
-FROM node:20-alpine AS deps
+FROM node:20-alpine
+RUN apk upgrade --no-cache AS deps
 
 WORKDIR /app
 
@@ -7,6 +8,7 @@ RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 
 # ---- runtime image ----
 FROM node:20-alpine
+RUN apk upgrade --no-cache
 
 # Non-root user for security
 RUN addgroup -S casper && adduser -S casper -G casper

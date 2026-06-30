@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const SIEM_SECRET = process.env.SIEM_SECRET || 'casper-siem-default-secret-123';
+const SIEM_SECRET = process.env.SIEM_SECRET || crypto.randomBytes(32).toString('hex');
 
 /**
  * Logs a high-value security or compliance event to the SIEM via stdout.

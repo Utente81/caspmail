@@ -33,7 +33,7 @@ export default async function socRoutes(app) {
   app.get('/overview', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    const [metrics, alerts, cases] = await Promise.all([
+    const [metrics, alerts, cases, trend, severity_dist] = await Promise.all([
       pool.query(`
         SELECT
           (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
@@ -57,12 +57,27 @@ export default async function socRoutes(app) {
         FROM soc_cases WHERE tenant_id = $1
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
+      pool.query(`
+        SELECT date_trunc('hour', created_at) AS time_bucket, COUNT(*) AS event_count
+        FROM soc_events
+        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC
+      `, [tenantId]),
+      pool.query(`
+        SELECT severity, COUNT(*) AS count
+        FROM soc_events
+        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY severity
+      `, [tenantId])
     ]);
     reply.send({
       metrics: metrics.rows[0],
       recent_alerts: alerts.rows,
       recent_cases: cases.rows,
-    });
+      events_trend: trend.rows,
+      severity_distribution: severity_dist.rows
+    }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
   // ─── Alerts ───────────────────────────────────────────────────────────────
   app.get('/alerts', socGuard, async (req, reply) => {

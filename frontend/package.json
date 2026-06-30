@@ -13,6 +13,7 @@
     "react-dom": "^18.3.1",
     "react-globe.gl": "^2.38.0",
     "react-simple-maps": "^3.0.0",
+    "recharts": "^3.9.1",
     "three": "^0.185.0",
     "three-globe": "^2.45.2",
     "zustand": "^4.5.4"

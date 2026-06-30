@@ -32,6 +32,9 @@ spec:
     spec:
       containers:
       - image: caspermail-frontend:latest
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
         imagePullPolicy: Never
         name: frontend
         ports:

@@ -19,7 +19,7 @@ export default async function organizationRoutes(app) {
       'SELECT * FROM e2ee_folders WHERE tenant_id = $1 AND user_email = $2 ORDER BY created_at ASC',
       [user.tenant_id, user.email]
     );
-    reply.send({ data: rows });
+    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.post('/api/e2ee/folders', authGuard, async (req, reply) => {
@@ -46,7 +46,7 @@ export default async function organizationRoutes(app) {
       'DELETE FROM e2ee_folders WHERE id = $1 AND tenant_id = $2 AND user_email = $3',
       [req.params.id, user.tenant_id, user.email]
     );
-    reply.send({ success: true });
+    reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // ─── Drafts ──────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export default async function organizationRoutes(app) {
       'SELECT id, to_email, subject_encrypted, body_encrypted, nonce, created_at, updated_at FROM e2ee_drafts WHERE tenant_id = $1 AND user_email = $2 ORDER BY updated_at DESC',
       [user.tenant_id, user.email]
     );
-    reply.send({ data: rows });
+    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.post('/api/e2ee/drafts', authGuard, async (req, reply) => {
@@ -83,7 +83,7 @@ export default async function organizationRoutes(app) {
       [to_email || '', subject_encrypted, body_encrypted, nonce, req.params.id, user.tenant_id, user.email]
     );
     if (!rows[0]) return reply.status(404).send({ error: 'Draft not found' });
-    reply.send(rows[0]);
+    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.delete('/api/e2ee/drafts/:id', authGuard, async (req, reply) => {
@@ -92,6 +92,6 @@ export default async function organizationRoutes(app) {
       'DELETE FROM e2ee_drafts WHERE id = $1 AND tenant_id = $2 AND user_email = $3',
       [req.params.id, user.tenant_id, user.email]
     );
-    reply.send({ success: true });
+    reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 }

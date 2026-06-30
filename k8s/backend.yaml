@@ -19,6 +19,9 @@ spec:
       containers:
       - name: backend
         image: caspermail-backend:latest
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
         imagePullPolicy: Never
         env:
         - name: NODE_ENV

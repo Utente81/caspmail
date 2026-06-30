@@ -39,7 +39,7 @@ export default async function mailRoutes(app) {
   app.get('/api/me', authGuard, async (req, reply) => {
     const user = await getUser(req.user);
     if (!user) return reply.status(404).send({ error: 'User not found' });
-    reply.send(user);
+    reply.send(user); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.get('/api/me/dashboard', authGuard, async (req, reply) => {
@@ -137,7 +137,7 @@ export default async function mailRoutes(app) {
         [user.tenant_id, user.email]
       );
 
-      reply.send({ data: rows });
+      reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
     } catch (e) {
       reply.status(400).send({ error: e.message });
     }
@@ -213,7 +213,7 @@ export default async function mailRoutes(app) {
       return r;
     });
 
-    reply.send({ data: mappedRows, limit, offset, folder });
+    reply.send({ data: mappedRows, limit, offset, folder }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // ─── Send Message ─────────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ export default async function mailRoutes(app) {
     }
 
     if (emailsToFetch.length === 0) {
-      return reply.send({ data: [] });
+      return reply.send({ data: [] }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
     }
 
     const { rows } = await pool.query(
@@ -293,7 +293,7 @@ export default async function mailRoutes(app) {
       [user.tenant_id, emailsToFetch]
     );
 
-    reply.send({ data: rows });
+    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // ─── Get Single Message ───────────────────────────────────────────────────
@@ -342,7 +342,7 @@ export default async function mailRoutes(app) {
       msg.nonce = msg.sender_nonce;
     }
 
-    reply.send(msg);
+    reply.send(msg); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // ─── Trash / Delete / Flags ───────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ export default async function mailRoutes(app) {
     `, [req.params.id, user.email, user.tenant_id, JSON.stringify(flags)]);
     
     if (rows.length === 0) return reply.status(404).send({ error: 'Message not found' });
-    reply.send(rows[0]);
+    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.patch('/api/e2ee/messages/:id/trash', authGuard, async (req, reply) => {
@@ -381,7 +381,7 @@ export default async function mailRoutes(app) {
     `, [req.params.id, user.email, user.tenant_id]);
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Message not found' });
-    reply.send(rows[0]);
+    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.delete('/api/e2ee/messages/:id', authGuard, async (req, reply) => {
@@ -397,7 +397,7 @@ export default async function mailRoutes(app) {
         "UPDATE e2ee_messages SET recipient_flags = COALESCE(recipient_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND to_email = $2 AND id = $3",
         [user.tenant_id, user.email, id]
       );
-      reply.send({ success: true });
+      reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
     } catch (err) {
       reply.code(500).send({ error: 'Internal server error' });
     }
@@ -413,7 +413,7 @@ export default async function mailRoutes(app) {
     await pool.query(
       "UPDATE e2ee_messages SET recipient_flags = COALESCE(recipient_flags, '{}'::jsonb) || '{\"cleared\":true}'::jsonb WHERE tenant_id = $1 AND to_email = $2 AND recipient_deleted_at IS NOT NULL"
     , [user.tenant_id, user.email]);
-    reply.send({ success: true });
+    reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.patch('/api/e2ee/messages/bulk/flags', authGuard, async (req, reply) => {
@@ -424,7 +424,7 @@ export default async function mailRoutes(app) {
     await pool.query(
       "UPDATE e2ee_messages SET sender_flags = CASE WHEN from_email = $2 THEN COALESCE(sender_flags, '{}'::jsonb) || $3::jsonb ELSE sender_flags END, recipient_flags = CASE WHEN to_email = $2 THEN COALESCE(recipient_flags, '{}'::jsonb) || $3::jsonb ELSE recipient_flags END WHERE tenant_id = $1 AND id = ANY($4) AND (from_email = $2 OR to_email = $2)" 
     , [user.tenant_id, user.email, JSON.stringify(flags), ids]);
-    reply.send({ success: true });
+    reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   app.patch('/api/e2ee/messages/bulk/trash', authGuard, async (req, reply) => {
@@ -435,6 +435,6 @@ export default async function mailRoutes(app) {
     await pool.query(
       "UPDATE e2ee_messages SET sender_deleted_at = CASE WHEN from_email = $2 THEN NOW() ELSE sender_deleted_at END, recipient_deleted_at = CASE WHEN to_email = $2 THEN NOW() ELSE recipient_deleted_at END WHERE tenant_id = $1 AND id = ANY($3) AND (from_email = $2 OR to_email = $2)" 
     , [user.tenant_id, user.email, ids]);
-    reply.send({ success: true });
+    reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 }

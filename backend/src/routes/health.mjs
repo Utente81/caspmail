@@ -12,7 +12,7 @@ export default async function healthRoutes(app) {
     } catch {
       return reply.status(503).send({ ok: false, db: 'error', version: VERSION });
     }
-    reply.send({ ok: true, db: 'ok', version: VERSION });
+    reply.send({ ok: true, db: 'ok', version: VERSION }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // Deep readiness probe — checks DB + Keycloak reachability

@@ -16,6 +16,9 @@ spec:
       containers:
       - name: pgadmin
         image: dpage/pgadmin4:latest
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
         env:
         - name: PGADMIN_DEFAULT_EMAIL
           value: admin@caspermail.com

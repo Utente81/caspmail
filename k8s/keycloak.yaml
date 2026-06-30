@@ -18,6 +18,9 @@ spec:
       containers:
       - name: keycloak
         image: quay.io/keycloak/keycloak:25.0
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
         command: ["/bin/bash", "-c"]
         args: 
           - |

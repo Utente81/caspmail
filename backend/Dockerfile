@@ -1,5 +1,5 @@
-FROM node:20-alpine
-RUN apk upgrade --no-cache AS deps
+FROM node:20-alpine AS deps
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 
@@ -23,7 +23,6 @@ COPY package.json package-lock.json ./
 COPY src/ ./src/
 
 COPY migrations/ ./migrations/
-# so no COPY needed here — the compose file handles it.
 
 # Drop privileges
 USER casper
@@ -32,4 +31,4 @@ EXPOSE 3000
 
 ENV NODE_ENV=production
 
-CMD ["node", "src/app.mjs"]
+CMD [" node\, \src/app.mjs\]

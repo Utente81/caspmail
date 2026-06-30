@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw } from 'lucide-react'
 
 function SeverityBadge({ severity }) {
@@ -61,6 +62,15 @@ const MOCK_DATA = {
     { name: 'UEBA Engine', status: 'degraded' },
     { name: 'SOAR Automation', status: 'healthy' },
   ],
+}
+
+
+const COLORS = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#3b82f6',
+  info: '#64748b'
 }
 
 export default function SOCOverview() {
@@ -161,7 +171,69 @@ export default function SOCOverview() {
         )}
       </div>
 
-      {/* Two-column grid */}
+      
+      {/* Charts Row */}
+      <div className="soc-two-col" style={{ marginBottom: 'var(--gap)' }}>
+        <div className="soc-panel">
+          <div className="soc-panel-header">
+            <h3 className="soc-panel-title">Events Trend (24h)</h3>
+          </div>
+          <div style={{ width: '100%', height: 250 }}>
+            {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
+              <ResponsiveContainer>
+                <AreaChart data={data?.events_trend || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time_bucket" tickFormatter={(t) => new Date(t).getHours() + ':00'} stroke="#64748b" fontSize={11} />
+                  <YAxis stroke="#64748b" fontSize={11} />
+                  <RechartsTooltip 
+                    labelFormatter={(t) => new Date(t).toLocaleString()}
+                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f8fafc' }}
+                  />
+                  <Area type="monotone" dataKey="event_count" stroke="#3b82f6" fillOpacity={1} fill="url(#colorEvents)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="soc-panel">
+          <div className="soc-panel-header">
+            <h3 className="soc-panel-title">Severity Distribution</h3>
+          </div>
+          <div style={{ width: '100%', height: 250 }}>
+            {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={data?.severity_distribution || []}
+                    dataKey="count"
+                    nameKey="severity"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={4}
+                  >
+                    {(data?.severity_distribution || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[entry.severity] || COLORS.info} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f8fafc' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Two-column grid 
       <div className="soc-two-col">
         {/* Recent Alerts */}
         <div className="soc-panel">

@@ -58,14 +58,14 @@ export default async function socRoutes(app) {
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
-        SELECT date_trunc('hour', created_at) AS time_bucket, COUNT(*) AS event_count
+        SELECT date_trunc('hour', created_at) AS time_bucket, COUNT(*)::int AS event_count
         FROM soc_events
         WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY time_bucket
         ORDER BY time_bucket ASC
       `, [tenantId]),
       pool.query(`
-        SELECT severity, COUNT(*) AS count
+        SELECT severity, COUNT(*)::int AS count
         FROM soc_events
         WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY severity
@@ -268,22 +268,22 @@ export default async function socRoutes(app) {
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const [bySeverity, byType, byHour, topIps] = await Promise.all([
       pool.query(`
-        SELECT severity, COUNT(*) AS count
+        SELECT severity, COUNT(*)::int AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY severity ORDER BY count DESC
       `, [tenantId]),
       pool.query(`
-        SELECT type, COUNT(*) AS count
+        SELECT type, COUNT(*)::int AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY type ORDER BY count DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
-        SELECT date_trunc('hour', created_at) AS hour, COUNT(*) AS count
+        SELECT date_trunc('hour', created_at) AS hour, COUNT(*)::int AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY hour ORDER BY hour
       `, [tenantId]),
       pool.query(`
-        SELECT source_ip::text, COUNT(*) AS count, MAX(severity) AS max_severity
+        SELECT source_ip::text, COUNT(*)::int AS count, MAX(severity) AS max_severity
         FROM soc_events
         WHERE tenant_id=$1 AND source_ip IS NOT NULL
           AND created_at > NOW() - INTERVAL '24 hours'
@@ -382,7 +382,7 @@ export default async function socRoutes(app) {
         SELECT
           date_trunc('hour', created_at) AS hour,
           severity,
-          COUNT(*) AS count
+          COUNT(*)::int AS count
         FROM soc_events
         WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY hour, severity

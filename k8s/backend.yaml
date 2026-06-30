@@ -18,11 +18,11 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: backend
-        image: caspermail-backend:latest
+        image: ghcr.io/utente81/caspmail-backend:main
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         env:
         - name: NODE_ENV
           value: production

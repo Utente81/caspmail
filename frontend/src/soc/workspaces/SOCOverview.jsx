@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw, User, Clock, Hash } from 'lucide-react'
 
 function SeverityBadge({ severity }) {
   return <span className={`soc-badge sev-${severity?.toLowerCase()}`}>{severity}</span>
+}
+
+
+function formatDate(dateString) {
+  if (!dateString) return 'N/A';
+  const d = new Date(dateString);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function StatusBadge({ status }) {
@@ -183,16 +190,18 @@ export default function SOCOverview() {
               <ResponsiveContainer>
                 <AreaChart data={data?.events_trend || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
+                    
                     <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
                     </linearGradient>
+
                   </defs>
                   <XAxis dataKey="time_bucket" tickFormatter={(t) => new Date(t).getHours() + ':00'} stroke="#64748b" fontSize={11} />
                   <YAxis stroke="#64748b" fontSize={11} />
                   <RechartsTooltip 
                     labelFormatter={(t) => new Date(t).toLocaleString()}
-                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f8fafc' }}
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 8, color: '#f1f5f9' }}
                   />
                   <Area type="monotone" dataKey="event_count" stroke="#3b82f6" fillOpacity={1} fill="url(#colorEvents)" />
                 </AreaChart>
@@ -205,7 +214,7 @@ export default function SOCOverview() {
           <div className="soc-panel-header">
             <h3 className="soc-panel-title">Severity Distribution</h3>
           </div>
-          <div style={{ width: '100%', height: 250 }}>
+          <div style={{ width: '100%', height: 300 }}>
             {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
               <ResponsiveContainer>
                 <PieChart>
@@ -223,8 +232,14 @@ export default function SOCOverview() {
                       <Cell key={`cell-${index}`} fill={COLORS[entry.severity] || COLORS.info} />
                     ))}
                   </Pie>
-                  <RechartsTooltip 
-                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f8fafc' }}
+                  <Legend
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    iconSize={8}
+                    formatter={(value) => <span style={{ color: '#94a3b8', fontSize: 11, textTransform: 'capitalize' }}>{value}</span>}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 8, color: '#f1f5f9' }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -233,8 +248,8 @@ export default function SOCOverview() {
         </div>
       </div>
 
-      {/* Two-column grid */}
-      <div className="soc-two-col">
+      {/* Alerts & Cases */}
+      <div className="soc-two-col" style={{ marginBottom: 'var(--gap)' }}>
         {/* Recent Alerts */}
         <div className="soc-panel">
           <div className="soc-panel-header">
@@ -255,9 +270,9 @@ export default function SOCOverview() {
                 {alerts.map(a => (
                   <tr key={a.id}>
                     <td><SeverityBadge severity={a.severity} /></td>
-                    <td className="soc-td-wrap">{a.message}</td>
-                    <td className="soc-td-mono">{a.type}</td>
-                    <td className="soc-td-muted">{a.time}</td>
+                    <td className="soc-td-message" title={a.message}>{a.message}</td>
+                    <td className="soc-td-mono soc-td-muted">{a.event_type || a.type || "N/A"}</td>
+                    <td className="soc-td-muted">{formatDate(a.created_at || a.time)}</td>
                     <td><StatusBadge status={a.status} /></td>
                   </tr>
                 ))}
@@ -286,9 +301,9 @@ export default function SOCOverview() {
                 </thead>
                 <tbody>
                   {cases.map(c => (
-                    <tr key={c.id}>
-                      <td className="soc-td-mono soc-td-muted">{c.id}</td>
-                      <td>{c.title}</td>
+                    <tr key={c.id.substring(0,8)}>
+                      <td className="soc-td-mono soc-td-muted">{c.id.substring(0,8)}</td>
+                      <td className="soc-td-message" title={c.title}>{c.title}</td>
                       <td><SeverityBadge severity={c.severity} /></td>
                       <td><StatusBadge status={c.status} /></td>
                       <td className="soc-td-muted">{c.assigned_to}</td>

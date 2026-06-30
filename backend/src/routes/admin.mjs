@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { readFileSync } from 'fs';
 import pool from '../db/pool.mjs';
 import { requireRole } from '../auth/verify.mjs';
-import { logSiemEvent } from '../audit/siem.mjs';
 
 const ADMIN_ROLES = ['admin', 'casper_admin'];
 const MANAGED_REALM_ROLES = ['user', 'admin', 'soc_analyst', 'soc_manager'];
@@ -10,16 +9,6 @@ const KEYCLOAK_INTERNAL_URL = process.env.KEYCLOAK_INTERNAL_URL || 'http://keycl
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'caspermail';
 const KEYCLOAK_ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER || 'admin';
 const KEYCLOAK_ADMIN_PASSWORD_FILE = process.env.KEYCLOAK_ADMIN_PASSWORD_FILE || '/run/secrets/keycloak_admin_password';
-
-// ─── Roles that can see ALL tenants in audit/domains ────────────────────────
-const SUPERADMIN_ROLES = ['casper_admin'];
-
-function isSuperAdmin(user) {
-  const roles = user?.realm_access?.roles || [];
-  return roles.some((r) => SUPERADMIN_ROLES.includes(r));
-}
-
-// ─── Keycloak helpers ────────────────────────────────────────────────────────
 
 function keycloakAdminPassword() {
   return readFileSync(KEYCLOAK_ADMIN_PASSWORD_FILE, 'utf8').trim();
@@ -142,96 +131,42 @@ async function provisionKeycloakUser({ email, name, role, password, enabled = tr
   return keycloakUser.id;
 }
 
-/**
- * Upsert Keycloak user status.
- * If the user does not exist in Keycloak, it is created (reconciliation).
- * Returns the Keycloak user ID.
- */
 async function syncKeycloakUserStatus({ email, name, role, status }) {
   const token = await keycloakAdminToken();
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  let keycloakUser = await findKeycloakUser(token, email);
-  const enabled = status === 'active';
+  const keycloakUser = await findKeycloakUser(token, email);
+  if (!keycloakUser) return null;
 
-  if (!keycloakUser) {
-    // ── RECONCILIATION: user exists in DB but not in Keycloak ──────────────
-    // Recreate the user so the two sources of truth are back in sync.
-    const createRes = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users`, {
-      method: 'POST',
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  await keycloakJson(
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}`,
+    {
+      method: 'PUT',
       headers,
       body: JSON.stringify({
-        username: email,
+        ...keycloakUser,
         email,
         firstName: name || email,
-        enabled,
+        enabled: status === 'active',
         emailVerified: true,
       }),
-    });
-    if (!createRes.ok) {
-      const text = await createRes.text().catch(() => '');
-      throw new Error(`Keycloak reconciliation failed for ${email}: ${createRes.status} ${text}`);
     }
-    keycloakUser = await findKeycloakUser(token, email);
-    if (!keycloakUser?.id) throw new Error(`Keycloak reconciliation: could not find user after create for ${email}`);
-  } else {
-    // ── UPDATE existing user ────────────────────────────────────────────────
-    await keycloakJson(
-      `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}`,
-      {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({
-          ...keycloakUser,
-          email,
-          firstName: name || email,
-          enabled,
-          emailVerified: true,
-        }),
-      }
-    );
-  }
+  );
 
-  if (enabled) {
+  if (status === 'active') {
     await setKeycloakUserRole(token, keycloakUser.id, role);
   }
 
   return keycloakUser.id;
 }
 
-/**
- * Reset password for a Keycloak user.
- * If the user does not exist, a reconciliation upsert is performed first,
- * then the password is set.
- */
-async function resetKeycloakUserPassword({ email, name = '', role = 'user', password }) {
+async function resetKeycloakUserPassword({ email, password }) {
   if (!password) return null;
 
   const token = await keycloakAdminToken();
-  let keycloakUser = await findKeycloakUser(token, email);
+  const keycloakUser = await findKeycloakUser(token, email);
+  if (!keycloakUser) throw new Error('Keycloak user not found');
+
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
-  if (!keycloakUser) {
-    // ── RECONCILIATION: upsert before password reset ────────────────────────
-    const createRes = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        username: email,
-        email,
-        firstName: name || email,
-        enabled: true,
-        emailVerified: true,
-      }),
-    });
-    if (!createRes.ok) {
-      const text = await createRes.text().catch(() => '');
-      throw new Error(`Keycloak password-reset reconciliation failed for ${email}: ${createRes.status} ${text}`);
-    }
-    keycloakUser = await findKeycloakUser(token, email);
-    if (!keycloakUser?.id) throw new Error(`Keycloak: could not find user after reconcile for ${email}`);
-    await setKeycloakUserRole(token, keycloakUser.id, role);
-  }
-
   await keycloakJson(
     `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}/reset-password`,
     {
@@ -244,83 +179,12 @@ async function resetKeycloakUserPassword({ email, name = '', role = 'user', pass
   return keycloakUser.id;
 }
 
-// ─── SOAR playbook config schema validation ──────────────────────────────────
-
-const SOAR_ACTION_SCHEMAS = {
-  send_email: ['to', 'subject', 'body'],
-  block_ip: ['ip'],
-  webhook: ['url'],
-  create_case: ['title', 'severity'],
-  notify_slack: ['webhook_url', 'message'],
-};
-
-const SOAR_TRIGGER_TYPES = ['manual', 'alert_high', 'alert_critical', 'event_login_failure', 'event_data_exfil', 'scheduled'];
-
-function validateSoarPlaybookConfig(trigger_type, action_type, config) {
-  const errors = [];
-
-  if (!SOAR_TRIGGER_TYPES.includes(trigger_type)) {
-    errors.push(`Invalid trigger_type. Allowed: ${SOAR_TRIGGER_TYPES.join(', ')}`);
-  }
-
-  const requiredFields = SOAR_ACTION_SCHEMAS[action_type];
-  if (!requiredFields) {
-    errors.push(`Invalid action_type. Allowed: ${Object.keys(SOAR_ACTION_SCHEMAS).join(', ')}`);
-  } else {
-    for (const field of requiredFields) {
-      if (!config?.[field]) {
-        errors.push(`config.${field} is required for action_type "${action_type}"`);
-      }
-    }
-  }
-
-  return errors;
-}
-
-// ─── Routes ──────────────────────────────────────────────────────────────────
-
 export default async function adminRoutes(app) {
-  const adminGuard = {
-  preHandler: async (req, reply) => {
-    if (!req.headers.authorization && req.query?.token) {
-      req.headers.authorization = `Bearer ${req.query.token}`;
-    }
-    return requireRole(ADMIN_ROLES)(req, reply);
-  }
-};
-
-  
-// ─── Multi-Tenancy Segregation ──────────────────────────────────────────────
-async function getEnforcedTenantId(req, requestedTenantId, isGlobalAllowed = false) {
-  if (isSuperAdmin(req.user)) {
-    if (requestedTenantId) return requestedTenantId;
-    if (isGlobalAllowed) return null;
-    throw new Error('Tenant ID is required for this operation');
-  }
-
-  const tenantRes = await pool.query(
-    'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-    [req.user.email || req.user.preferred_username]
-  );
-  const userTenant = tenantRes.rows[0]?.tenant_id;
-  if (!userTenant) {
-    throw new Error('User has no tenant association');
-  }
-  return userTenant;
-}
-
-const superAdminGuard = {
-  preHandler: async (req, reply) => {
-    if (!req.headers.authorization && req.query?.token) {
-      req.headers.authorization = `Bearer ${req.query.token}`;
-    }
-    return requireRole(SUPERADMIN_ROLES)(req, reply);
-  }
-};
+  const adminGuard = { preHandler: requireRole(ADMIN_ROLES) };
 
   // ─── Summary ──────────────────────────────────────────────────────────────
 
-  app.get('/summary', superAdminGuard, async (req, reply) => {
+  app.get('/summary', adminGuard, async (req, reply) => {
     const { rows } = await pool.query(`
       SELECT
         (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
@@ -329,7 +193,7 @@ const superAdminGuard = {
         (SELECT COUNT(*) FROM soc_alerts WHERE status = 'open')       AS open_alerts,
         (SELECT COUNT(*) FROM soc_cases  WHERE status = 'open')       AS open_cases
     `);
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
 
   // ─── Tenants ──────────────────────────────────────────────────────────────
@@ -337,80 +201,34 @@ const superAdminGuard = {
   app.get('/tenants', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset = parseInt(req.query.offset || '0', 10);
-    const search = req.query.search?.trim();
 
-    let query = "SELECT * FROM tenants WHERE status != 'deleted'";
-    const params = [];
-
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` AND (name ILIKE $${params.length} OR id ILIKE $${params.length})`;
-    }
-
-    params.push(limit, offset);
-    query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
-
-    const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    const { rows } = await pool.query(
+      'SELECT * FROM tenants ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      [limit, offset]
+    );
+    reply.send({ data: rows, limit, offset });
   });
 
-  app.post('/tenants', superAdminGuard, async (req, reply) => {
-    const { name, status = 'active', plan = 'basic' } = req.body || {};
-    if (!name) return reply.status(400).send({ error: 'name is required' });
+  app.post('/tenants', adminGuard, async (req, reply) => {
+    const { id, name, plan = 'starter', region = 'eu-west-1' } = req.body || {};
+    if (!id || !name) {
+      return reply.status(400).send({ error: 'id and name are required' });
+    }
 
-    const id = uuidv4().replace(/-/g, '').slice(0, 20);
     const { rows } = await pool.query(
-      `INSERT INTO tenants (id, name, status, plan) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [id, name, status, plan]
+      `INSERT INTO tenants (id, name, plan, region)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [id, name, plan, region]
     );
 
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'create', 'tenant', $3, $4)`,
-      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name }), req.ip]
+      [id, req.user.sub, JSON.stringify({ id, name, plan }), req.ip]
     );
 
     reply.status(201).send(rows[0]);
-  });
-
-  app.put('/tenants/:id', superAdminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { name, status, plan } = req.body || {};
-
-    const { rows, rowCount } = await pool.query(
-      `UPDATE tenants SET name=COALESCE($1, name), status=COALESCE($2, status), plan=COALESCE($3, plan)
-       WHERE id=$4 RETURNING *`,
-      [name, status, plan, id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'Tenant not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'update', 'tenant', $3, $4)`,
-      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, status, plan }), req.ip]
-    );
-
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.delete('/tenants/:id', superAdminGuard, async (req, reply) => {
-    const { id } = req.params;
-    
-    const { rowCount } = await pool.query(
-      `UPDATE tenants SET status='deleted' WHERE id=$1 RETURNING *`,
-      [id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'Tenant not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'delete', 'tenant', $3, $4)`,
-      [id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id }), req.ip]
-    );
-
-    reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
   // ─── Users ────────────────────────────────────────────────────────────────
@@ -418,89 +236,90 @@ const superAdminGuard = {
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
-    const search    = req.query.search?.trim();
-    let tenant_id;
-    try {
-      tenant_id = await getEnforcedTenantId(req, req.query.tenant_id, true);
-    } catch (e) {
-      return reply.status(403).send({ error: e.message });
-    }
-    const status    = req.query.status;
+    const tenantId  = req.query.tenant_id;
 
-    let query = `SELECT * FROM users WHERE COALESCE(status, 'active') <> 'deleted'`;
+    let query = 'SELECT * FROM users';
     const params = [];
+    const where = [];
 
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` AND (email ILIKE $${params.length} OR name ILIKE $${params.length})`;
+    if (tenantId) {
+      params.push(tenantId);
+      where.push(`tenant_id = $${params.length}`);
     }
-    if (tenant_id) {
-      params.push(tenant_id);
-      query += ` AND tenant_id = $${params.length}`;
+
+    if (req.query.include_deleted !== 'true') {
+      where.push("COALESCE(status, 'active') <> 'deleted'");
     }
-    if (status) {
-      params.push(status);
-      query += ` AND status = $${params.length}`;
+
+    if (where.length) {
+      query += ` WHERE ${where.join(' AND ')}`;
     }
 
     params.push(limit, offset);
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
 
   app.post('/users', adminGuard, async (req, reply) => {
-    let { tenant_id,
-      email,
-      name = '',
-      role = 'user',
-      quota_mb = 1024,
-      password = '',
-    } = req.body || {};
-
-    try { tenant_id = await getEnforcedTenantId(req, tenant_id, false); } catch (e) { return reply.status(403).send({ error: e.message }); }
+    const { tenant_id, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
+    }
+    if (!password || password.length < 8) {
+      return reply.status(400).send({ error: 'Password is required (min 8 chars)' });
     }
     if (!['user', 'admin', 'soc_analyst', 'soc_manager'].includes(role)) {
       return reply.status(400).send({ error: 'Invalid role' });
     }
-    if (password && password.length < 8) {
-      return reply.status(400).send({ error: 'Password must be at least 8 chars' });
-    }
 
-    const existing = await pool.query(
-      'SELECT id, status FROM users WHERE tenant_id=$1 AND email=$2',
+    const { rows: existingRows } = await pool.query(
+      'SELECT * FROM users WHERE tenant_id=$1 AND email=$2',
       [tenant_id, email]
     );
 
     let user;
-    let auditAction;
+    let auditAction = 'create';
 
-    if (existing.rows.length > 0 && existing.rows[0].status !== 'deleted') {
-      return reply.status(409).send({ error: 'User with that email already exists in this tenant' });
-    }
+    if (existingRows.length) {
+      const existing = existingRows[0];
+      if (existing.status !== 'deleted') {
+        try {
+          await provisionKeycloakUser({ email, name, role, password, enabled: existing.status === 'active' });
+        } catch (err) {
+          req.log.error({ err, email }, 'Keycloak existing user sync failed');
+          return reply.status(502).send({ error: 'Keycloak existing user sync failed' });
+        }
 
-    if (existing.rows.length > 0 && existing.rows[0].status === 'deleted') {
-      // Re-activate soft-deleted user
-      auditAction = 'reactivate';
-      try {
-        await provisionKeycloakUser({ email, name, role, password, enabled: true });
-      } catch (err) {
-        req.log.error({ err, email }, 'Keycloak user reactivation failed');
-        return reply.status(502).send({ error: 'Keycloak user reactivation failed' });
+        const { rows } = await pool.query(
+          `UPDATE users
+           SET name=$1, role=$2, quota_mb=$3
+           WHERE id=$4
+           RETURNING *`,
+          [name, role, Number(quota_mb) || 1024, existing.id]
+        );
+        user = rows[0];
+        auditAction = 'sync';
+      } else {
+        try {
+          await provisionKeycloakUser({ email, name, role, password, enabled: true });
+        } catch (err) {
+          req.log.error({ err, email }, 'Keycloak user restore failed');
+          return reply.status(502).send({ error: 'Keycloak user restore failed' });
+        }
+
+        const { rows } = await pool.query(
+          `UPDATE users
+           SET name=$1, role=$2, quota_mb=$3, status='active'
+           WHERE id=$4
+           RETURNING *`,
+          [name, role, Number(quota_mb) || 1024, existing.id]
+        );
+        user = rows[0];
+        auditAction = 'restore';
       }
-
-      const { rows } = await pool.query(
-        `UPDATE users SET name=$1, role=$2, quota_mb=$3, status='active'
-         WHERE tenant_id=$4 AND email=$5 RETURNING *`,
-        [name, role, Number(quota_mb) || 1024, tenant_id, email]
-      );
-      user = rows[0];
     } else {
-      // Create new user
-      auditAction = 'create';
       try {
         await provisionKeycloakUser({ email, name, role, password, enabled: true });
       } catch (err) {
@@ -523,7 +342,7 @@ const superAdminGuard = {
        VALUES ($1, $2, $3, 'user', $4, $5)`,
       [
         tenant_id,
-        (req.user.email || req.user.preferred_username || req.user.sub),
+        req.user.sub,
         auditAction,
         JSON.stringify({ id: user.id, email: user.email, role: user.role, status: user.status }),
         req.ip,
@@ -566,7 +385,6 @@ const superAdminGuard = {
     const auditAction = status === 'deleted' ? 'delete' : 'update';
 
     try {
-      // syncKeycloakUserStatus now upserts — will reconcile missing KC users
       await syncKeycloakUserStatus({
         email: rows[0].email,
         name: rows[0].name,
@@ -574,12 +392,7 @@ const superAdminGuard = {
         status: rows[0].status,
       });
       if (password && rows[0].status === 'active') {
-        await resetKeycloakUserPassword({
-          email: rows[0].email,
-          name: rows[0].name,
-          role: rows[0].role,
-          password,
-        });
+        await resetKeycloakUserPassword({ email: rows[0].email, password });
       }
     } catch (err) {
       req.log.error({ err, email: rows[0].email }, 'Keycloak user status sync failed');
@@ -591,14 +404,14 @@ const superAdminGuard = {
        VALUES ($1, $2, $3, 'user', $4, $5)`,
       [
         rows[0].tenant_id,
-        (req.user.email || req.user.preferred_username || req.user.sub),
+        req.user.sub,
         auditAction,
         JSON.stringify({ id, email: rows[0].email, role, status }),
         req.ip,
       ]
     );
 
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
 
   app.delete('/users/:id', adminGuard, async (req, reply) => {
@@ -631,151 +444,21 @@ const superAdminGuard = {
        VALUES ($1, $2, 'delete', 'user', $3, $4)`,
       [
         rows[0].tenant_id,
-        (req.user.email || req.user.preferred_username || req.user.sub),
+        req.user.sub,
         JSON.stringify({ id, email: rows[0].email }),
         req.ip,
       ]
     );
 
-    reply.send({ ok: true, user: rows[0] }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  // ─── Legal Hold (Enterprise) ─────────────────────────────────────────────
-
-  app.patch('/users/:id/legal-hold', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { legal_hold } = req.body || {};
-
-    const { rows, rowCount } = await pool.query(
-      `UPDATE users
-       SET legal_hold = $1
-       WHERE id = $2
-       RETURNING *`,
-      [!!legal_hold, id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'User not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'update_legal_hold', 'user', $3, $4)`,
-      [
-        rows[0].tenant_id,
-        (req.user.email || req.user.preferred_username || req.user.sub),
-        JSON.stringify({ id, email: rows[0].email, legal_hold: !!legal_hold }),
-        req.ip,
-      ]
-    );
-
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  // ─── Data Retention / GDPR Purge ────────────────────────────────────────
-
-  app.post('/retention/purge', adminGuard, async (req, reply) => {
-    let tenantId;
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    } else {
-      tenantId = req.body?.tenant_id;
-      if (!tenantId) return reply.status(400).send({ error: 'tenant_id required for superadmin' });
-    }
-
-    // Hard-delete messages older than 30 days that are marked as deleted (soft delete)
-    // AND neither the message itself nor its sender/recipient are under legal_hold.
-    const { rowCount } = await pool.query(`
-      DELETE FROM e2ee_messages 
-      WHERE tenant_id = $1 
-        AND deleted_at < NOW() - INTERVAL '30 days'
-        AND legal_hold = FALSE
-        AND from_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
-        AND to_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
-    `, [tenantId]);
-
-    // Also purge trash where both sender and recipient have deleted it long ago
-    const { rowCount: trashCount } = await pool.query(`
-      DELETE FROM e2ee_messages
-      WHERE tenant_id = $1
-        AND sender_deleted_at < NOW() - INTERVAL '30 days'
-        AND recipient_deleted_at < NOW() - INTERVAL '30 days'
-        AND legal_hold = FALSE
-        AND from_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
-        AND to_email NOT IN (SELECT email FROM users WHERE tenant_id = $1 AND legal_hold = TRUE)
-    `, [tenantId]);
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'gdpr_purge', 'e2ee_messages', $3, $4)`,
-      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ purged_count: rowCount + trashCount }), req.ip]
-    );
-
-    reply.send({ ok: true, purged_count: rowCount + trashCount }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  // ─── User Sessions ────────────────────────────────────────────────────────
-
-  app.get('/users/:id/sessions', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { rows } = await pool.query('SELECT email FROM users WHERE id = $1', [id]);
-    if (!rows.length) return reply.status(404).send({ error: 'User not found' });
-    
-    try {
-      const token = await keycloakAdminToken();
-      const kcUser = await findKeycloakUser(token, rows[0].email);
-      if (!kcUser) return reply.send({ data: [] }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-
-      const sessions = await keycloakJson(
-        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${kcUser.id}/sessions`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      reply.send({ data: sessions }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-    } catch (e) {
-      req.log.error({ err: e }, 'Failed to fetch sessions');
-      reply.send({ data: [] }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write 
-    }
-  });
-
-  app.post('/users/:id/logout', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { rows } = await pool.query('SELECT email, tenant_id FROM users WHERE id = $1', [id]);
-    if (!rows.length) return reply.status(404).send({ error: 'User not found' });
-
-    try {
-      const token = await keycloakAdminToken();
-      const kcUser = await findKeycloakUser(token, rows[0].email);
-      if (kcUser) {
-        await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${kcUser.id}/logout`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-      }
-
-      await pool.query(
-        `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-         VALUES ($1, $2, 'revoke_session', 'user', $3, $4)`,
-        [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ target_user: rows[0].email }), req.ip]
-      );
-
-      reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-    } catch (e) {
-      req.log.error({ err: e }, 'Failed to logout user');
-      reply.status(500).send({ error: 'Failed to logout user' });
-    }
+    reply.send({ ok: true, user: rows[0] });
   });
 
   // ─── Domains ──────────────────────────────────────────────────────────────
 
   app.get('/domains', adminGuard, async (req, reply) => {
-    const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
-    const offset = parseInt(req.query.offset || '0', 10);
-
-    // Non-superadmins can only see their own tenant's domains
-    const tenantId = isSuperAdmin(req.user) ? req.query.tenant_id : req.user.tenant_id;
+    const limit    = Math.min(parseInt(req.query.limit  || '50', 10), 200);
+    const offset   = parseInt(req.query.offset || '0', 10);
+    const tenantId = req.query.tenant_id;
 
     let query = 'SELECT * FROM domains';
     const params = [];
@@ -789,14 +472,14 @@ const superAdminGuard = {
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
 
   app.post('/domains/:id/verify', adminGuard, async (req, reply) => {
     const { id } = req.params;
     const { rows: [domain] } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
     if (!domain) return reply.status(404).send({ error: 'Domain not found' });
-    if (domain.verified) return reply.send(domain); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    if (domain.verified) return reply.send(domain);
 
     // DNS TXT lookup via system resolver (best-effort)
     let verified = false;
@@ -815,18 +498,17 @@ const superAdminGuard = {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'verify', 'domain', $3, $4)`,
-      [domain.tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ domain: domain.domain, verified }), req.ip]
+      [domain.tenant_id, req.user.sub, JSON.stringify({ domain: domain.domain, verified }), req.ip]
     );
 
     if (!verified) {
       return reply.status(400).send({ error: 'DNS TXT record not found. Add the token to your DNS and retry.', domain: updated });
     }
-    reply.send(updated); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(updated);
   });
 
   app.post('/domains', adminGuard, async (req, reply) => {
-    let { tenant_id, domain, is_primary = false } = req.body || {};
-    try { tenant_id = await getEnforcedTenantId(req, tenant_id, false); } catch (e) { return reply.status(403).send({ error: e.message }); }
+    const { tenant_id, domain, is_primary = false } = req.body || {};
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }
@@ -844,7 +526,7 @@ const superAdminGuard = {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'create', 'domain', $3, $4)`,
-      [tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, domain }), req.ip]
+      [tenant_id, req.user.sub, JSON.stringify({ id, domain }), req.ip]
     );
 
     reply.status(201).send(rows[0]);
@@ -858,20 +540,8 @@ const superAdminGuard = {
     const search = req.query.search?.trim();
     const since  = req.query.since;
 
-    // ── Tenant scoping: non-superadmins only see their own tenant's log ─────
-    const params = [];
     let query = 'SELECT * FROM audit_log WHERE 1=1';
-
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      const tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-      params.push(tenantId);
-      query += ` AND tenant_id = $${params.length}`;
-    }
+    const params = [];
 
     if (search) {
       params.push(`%${search}%`);
@@ -890,311 +560,6 @@ const superAdminGuard = {
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.get('/audit/export', adminGuard, async (req, reply) => {
-    // ── Tenant scoping: non-superadmins only see their own tenant's log ─────
-    const params = [];
-    let query = 'SELECT * FROM audit_log WHERE 1=1';
-
-    let tenantId;
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-      params.push(tenantId);
-      query += ` AND tenant_id = $${params.length}`;
-    }
-
-    query += ' ORDER BY created_at DESC LIMIT 5000'; // Export up to 5k recent logs
-    const { rows } = await pool.query(query, params);
-
-    // CSV serialization
-    const header = ['ID', 'Tenant ID', 'Timestamp', 'Actor', 'Action', 'Resource', 'Details', 'IP'];
-    const csvRows = [header.join(',')];
-    
-    for (const row of rows) {
-      csvRows.push([
-        row.id,
-        row.tenant_id,
-        row.created_at.toISOString(),
-        `"${row.actor}"`,
-        row.action,
-        row.resource,
-        `"${JSON.stringify(row.details).replace(/"/g, '""')}"`,
-        row.ip || ''
-      ].join(','));
-    }
-
-    const csvData = csvRows.join('\n');
-
-    logSiemEvent({
-      tenantId: tenantId || 'system',
-      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email || req.user.preferred_username,
-      action: 'export_data',
-      resource: 'audit_log',
-      details: { format: 'csv', records: rows.length },
-      ip: req.ip
-    });
-
-    reply.header('Content-Type', 'text/csv');
-    reply.header('Content-Disposition', 'attachment; filename="audit_export.csv"');
-    reply.send(csvData); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.get('/metrics', superAdminGuard, async (req, reply) => {
-    let tenantId;
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    }
-
-    try {
-      const tenantFilter = tenantId ? 'WHERE tenant_id = $1' : '';
-      const params = tenantId ? [tenantId] : [];
-
-      const usersRes = await pool.query(`SELECT COUNT(*) as count FROM users ${tenantFilter}`, params);
-      const msgsRes = await pool.query(`SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(body_encrypted) + LENGTH(subject_encrypted)), 0) as storage FROM e2ee_messages ${tenantFilter}`, params);
-      const keysRes = await pool.query(`SELECT COUNT(DISTINCT user_email) as count FROM e2ee_keys ${tenantFilter}`, params);
-
-      reply.send({
-        data: {
-          total_users: parseInt(usersRes.rows[0].count, 10),
-          total_messages: parseInt(msgsRes.rows[0].count, 10),
-          storage_used_bytes: parseInt(msgsRes.rows[0].storage, 10),
-          users_with_keys: parseInt(keysRes.rows[0].count, 10)
-        }
-      });
-    } catch (e) {
-      reply.status(500).send({ error: 'Failed to fetch metrics' });
-    }
-  });
-
-  // ─── SOAR Playbooks ───────────────────────────────────────────────────────
-
-  app.get('/soar/playbooks', adminGuard, async (req, reply) => {
-    const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
-    const offset = parseInt(req.query.offset || '0', 10);
-    const tenantRes = await pool.query(
-      'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-      [req.user.email || req.user.preferred_username]
-    );
-    const tenantId = tenantRes.rows[0]?.tenant_id;
-    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-
-    const { rows } = await pool.query(
-      `SELECT * FROM soar_playbooks WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-      [tenantId, limit, offset]
-    );
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.post('/soar/playbooks', adminGuard, async (req, reply) => {
-    const { name, trigger_type, action_type, config = {} } = req.body || {};
-    if (!name || !trigger_type || !action_type) {
-      return reply.status(400).send({ error: 'name, trigger_type, and action_type are required' });
-    }
-
-    // ── Validate playbook config schema ─────────────────────────────────────
-    const validationErrors = validateSoarPlaybookConfig(trigger_type, action_type, config);
-    if (validationErrors.length > 0) {
-      return reply.status(400).send({ error: 'Invalid playbook configuration', details: validationErrors });
-    }
-
-    const tenantRes = await pool.query(
-      'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-      [req.user.email || req.user.preferred_username]
-    );
-    const tenantId = tenantRes.rows[0]?.tenant_id;
-    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-
-    const id = uuidv4();
-    const { rows } = await pool.query(
-      `INSERT INTO soar_playbooks (id, tenant_id, name, trigger_type, action_type, config, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [id, tenantId, name, trigger_type, action_type, JSON.stringify(config), (req.user.email || req.user.preferred_username || req.user.sub)]
-    );
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'create', 'soar_playbook', $3, $4)`,
-      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, trigger_type, action_type }), req.ip]
-    );
-
-    reply.status(201).send(rows[0]);
-  });
-
-  app.put('/soar/playbooks/:id', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { name, trigger_type, action_type, config, status } = req.body || {};
-
-    // ── Validate config only if action_type and/or config are being updated ─
-    if (trigger_type || action_type || config !== undefined) {
-      const current = await pool.query('SELECT * FROM soar_playbooks WHERE id=$1', [id]);
-      if (current.rowCount === 0) return reply.status(404).send({ error: 'Playbook not found' });
-
-      const effectiveTrigger = trigger_type || current.rows[0].trigger_type;
-      const effectiveAction  = action_type  || current.rows[0].action_type;
-      const effectiveConfig  = config       !== undefined ? config : current.rows[0].config;
-
-      const validationErrors = validateSoarPlaybookConfig(effectiveTrigger, effectiveAction, effectiveConfig);
-      if (validationErrors.length > 0) {
-        return reply.status(400).send({ error: 'Invalid playbook configuration', details: validationErrors });
-      }
-    }
-
-    const { rows, rowCount } = await pool.query(
-      `UPDATE soar_playbooks
-       SET name=COALESCE($1, name),
-           trigger_type=COALESCE($2, trigger_type),
-           action_type=COALESCE($3, action_type),
-           config=COALESCE($4::jsonb, config),
-           status=COALESCE($5, status),
-           updated_at=NOW()
-       WHERE id=$6 RETURNING *`,
-      [name, trigger_type, action_type, config ? JSON.stringify(config) : null, status, id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'Playbook not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'update', 'soar_playbook', $3, $4)`,
-      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id, name, status }), req.ip]
-    );
-
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.delete('/soar/playbooks/:id', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { rows, rowCount } = await pool.query(
-      `UPDATE soar_playbooks SET status='inactive', updated_at=NOW() WHERE id=$1 RETURNING *`,
-      [id]
-    );
-    if (rowCount === 0) return reply.status(404).send({ error: 'Playbook not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'delete', 'soar_playbook', $3, $4)`,
-      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ id }), req.ip]
-    );
-
-    reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  // ─── Organization Aliases ──────────────────────────────────────────────────
-
-  app.get('/aliases', adminGuard, async (req, reply) => {
-    let tenantId;
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    }
-
-    const query = tenantId 
-      ? 'SELECT * FROM organization_aliases WHERE tenant_id = $1 ORDER BY created_at DESC' 
-      : 'SELECT * FROM organization_aliases ORDER BY created_at DESC';
-    const params = tenantId ? [tenantId] : [];
-    
-    const { rows } = await pool.query(query, params);
-    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.post('/aliases', adminGuard, async (req, reply) => {
-    const { alias_email, members } = req.body || {};
-    if (!alias_email || !members || !Array.isArray(members)) {
-      return reply.status(400).send({ error: 'alias_email and members array are required' });
-    }
-
-    let tenantId;
-    if (!isSuperAdmin(req.user)) {
-      const tenantRes = await pool.query(
-        'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-        [req.user.email || req.user.preferred_username]
-      );
-      tenantId = tenantRes.rows[0]?.tenant_id;
-      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    } else {
-      tenantId = req.body.tenant_id;
-      if (!tenantId) return reply.status(400).send({ error: 'tenant_id is required for superadmins' });
-    }
-
-    try {
-      const { v4: uuidv4 } = await import('uuid');
-      const id = uuidv4();
-      const { rows } = await pool.query(
-        `INSERT INTO organization_aliases (id, tenant_id, alias_email, members)
-         VALUES ($1, $2, $3, $4::jsonb) RETURNING *`,
-        [id, tenantId, alias_email, JSON.stringify(members)]
-      );
-
-      await pool.query(
-        `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-         VALUES ($1, $2, 'create', 'alias', $3, $4)`,
-        [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email, members }), req.ip]
-      );
-
-      reply.status(201).send(rows[0]);
-    } catch (e) {
-      if (e.code === '23505') {
-        reply.status(409).send({ error: 'Alias already exists' });
-      } else {
-        reply.status(500).send({ error: 'Failed to create alias' });
-      }
-    }
-  });
-
-  app.put('/aliases/:id', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { members } = req.body || {};
-    if (!members || !Array.isArray(members)) {
-      return reply.status(400).send({ error: 'members array is required' });
-    }
-
-    const { rows, rowCount } = await pool.query(
-      `UPDATE organization_aliases SET members = $1::jsonb WHERE id = $2 RETURNING *`,
-      [JSON.stringify(members), id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'Alias not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'update', 'alias', $3, $4)`,
-      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email: rows[0].alias_email, members }), req.ip]
-    );
-
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-  });
-
-  app.delete('/aliases/:id', adminGuard, async (req, reply) => {
-    const { id } = req.params;
-    const { rows, rowCount } = await pool.query(
-      `DELETE FROM organization_aliases WHERE id = $1 RETURNING *`,
-      [id]
-    );
-
-    if (rowCount === 0) return reply.status(404).send({ error: 'Alias not found' });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-       VALUES ($1, $2, 'delete', 'alias', $3, $4)`,
-      [rows[0].tenant_id, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alias_email: rows[0].alias_email }), req.ip]
-    );
-
-    reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
 }

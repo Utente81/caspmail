@@ -233,7 +233,7 @@ export default function SOCOverview() {
         </div>
       </div>
 
-      {/* Two-column grid 
+      {/* Two-column grid */}
       <div className="soc-two-col">
         {/* Recent Alerts */}
         <div className="soc-panel">

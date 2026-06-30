@@ -2,7 +2,7 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 
 # ---- runtime image ----
@@ -17,7 +17,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 
 # Copy application source
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY src/ ./src/
 
 COPY migrations/ ./migrations/

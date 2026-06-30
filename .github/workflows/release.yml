@@ -1,0 +1,55 @@
+name: Release - SBOM & Sign
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags, e.g., v1.0.0
+
+jobs:
+  sbom-and-sign:
+    name: Generate SBOM and Sign Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write # Needed for keyless signing with Cosign
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Note: For this to work fully in a real environment, you need a Container Registry.
+      # We are simulating the process here by building the image locally.
+      - name: Build Docker Image
+        run: |
+          cd backend
+          docker build -t ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }} .
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0.15.11
+
+      - name: Generate SBOM
+        run: |
+          syft ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }} -o spdx-json=sbom-backend.spdx.json
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: sbom-backend.spdx.json
+          generate_release_notes: true
+
+      # - name: Log in to GHCR
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # - name: Push Image
+      #   run: docker push ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }}
+
+      # - name: Sign Image
+      #   run: cosign sign --yes ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }}

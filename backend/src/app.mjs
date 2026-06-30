@@ -68,7 +68,7 @@ function realIp(req) {
 
 // Global rate-limit (applied to all routes via plugin)
 await app.register(rateLimit, {
-  max: 200,
+  max: 100,
   timeWindow: '1 minute',
   keyGenerator: realIp,
   errorResponseBuilder(_req, context) {
@@ -86,7 +86,7 @@ await app.register(rateLimit, {
 const authRateLimit = {
   config: {
     rateLimit: {
-      max: 20,
+      max: 10,
       timeWindow: '1 minute',
       keyGenerator: realIp,
       errorResponseBuilder(_req, context) {
@@ -114,9 +114,9 @@ const writeRateLimit = {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 await app.register(healthRoutes);
-await app.register(adminRoutes, { prefix: '/api/admin' });
-await app.register(socRoutes, { prefix: '/api/v4/soc' });
-await app.register(socRoutes, { prefix: '/api/soc' });
+await app.register(adminRoutes, { prefix: '/api/admin', rateLimitHooks: { authRateLimit, writeRateLimit } });
+await app.register(socRoutes, { prefix: '/api/v4/soc', rateLimitHooks: { writeRateLimit } });
+await app.register(socRoutes, { prefix: '/api/soc', rateLimitHooks: { writeRateLimit } });
 await app.register(mailRoutes, { rateLimitHooks: { authRateLimit, writeRateLimit } });
 await app.register(organizationRoutes, { rateLimitHooks: { authRateLimit, writeRateLimit } });
 await app.register(contactsRoutes, { rateLimitHooks: { authRateLimit, writeRateLimit } });

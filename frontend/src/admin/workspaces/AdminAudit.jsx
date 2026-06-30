@@ -20,11 +20,26 @@ export default function AdminAudit() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('')
+  const [tenants, setTenants] = useState([])
+  const [selectedTenant, setSelectedTenant] = useState('')
+
+  useEffect(() => {
+    // Try to load tenants (only casper_admin has access)
+    api('/tenants').then(res => {
+      if (res.ok) return res.json();
+      return { data: [] };
+    }).then(data => {
+      if (data.data?.length > 0) {
+        setTenants(data.data);
+        setSelectedTenant(data.data[0].id);
+      }
+    }).catch(() => {});
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const res = await api('/audit?limit=100')
+      const res = await api('/audit?limit=100' + (selectedTenant ? '&tenant_id=' + selectedTenant : ''))
       if (!res.ok) throw new Error(`${res.status}`)
       const data = await res.json()
       setRows(data.data || [])
@@ -32,7 +47,7 @@ export default function AdminAudit() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (tenants.length > 0 && !selectedTenant) return; load() }, [load, selectedTenant, tenants.length])
 
   const filtered = rows.filter(r =>
     !filter ||
@@ -68,6 +83,16 @@ export default function AdminAudit() {
       )}
 
       <div className="adm-filter-bar">
+        {tenants.length > 0 && (
+          <select 
+            className="adm-input" 
+            value={selectedTenant} 
+            onChange={e => setSelectedTenant(e.target.value)}
+            style={{ width: 200, marginRight: 8, padding: '4px 8px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9' }}
+          >
+            {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
         <div className="adm-search">
           <Search size={14} className="adm-search-icon" />
           <input className="adm-search-input" placeholder="Filter by actor, action, resource…"

@@ -31,11 +31,11 @@ spec:
         app: frontend
     spec:
       containers:
-      - image: caspermail-frontend:latest
+      - image: ghcr.io/utente81/caspmail-frontend:main
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         name: frontend
         ports:
         - containerPort: 80

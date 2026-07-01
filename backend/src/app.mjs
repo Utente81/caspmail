@@ -11,7 +11,6 @@ import socRoutes, { startSoarWorker } from './routes/soc.mjs';
 import mailRoutes from './routes/mail.mjs';
 import organizationRoutes from './routes/organization.mjs';
 import contactsRoutes from './routes/contacts.mjs';
-import { startSimulator } from './soc_simulator.mjs';
 
 // Global cache for SOAR Application Firewall
 export const blockedIps = new Set();
@@ -178,7 +177,6 @@ try {
   app.log.info(`CaspMail backend listening on ${HOST}:${PORT}`);
   
   startSoarWorker(app);
-  startSimulator(app);
 } catch (err) {
   app.log.error(err, 'Fatal startup error');
   process.exit(1);

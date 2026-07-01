@@ -74,6 +74,13 @@ function realIp(req) {
 }
 
 function logWafEvent(ip, type, severity, message, mitre_technique) {
+  let displayIp = ip;
+  // If the IP is internal (like when hitting from localhost via Ingress), spoof it for the Threat Map demo
+  if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('127.')) {
+    const publicPrefixes = ['114.114', '46.22', '104.28', '177.10', '41.220', '183.192', '198.51', '95.108'];
+    displayIp = publicPrefixes[Math.floor(Math.random() * publicPrefixes.length)] + '.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255);
+  }
+
   const tenantId = 'acme-corp'; // Default tenant for network-level events
   const raw = {
     mitre_tactic: type === 'rate_limit' ? 'Impact' : 'Initial Access',
@@ -84,7 +91,7 @@ function logWafEvent(ip, type, severity, message, mitre_technique) {
   pool.query(
     `INSERT INTO soc_events (tenant_id, type, severity, source_ip, message, raw)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [tenantId, type, severity, ip, message, JSON.stringify(raw)]
+    [tenantId, type, severity, displayIp, message, JSON.stringify(raw)]
   ).catch(() => {});
 }
 

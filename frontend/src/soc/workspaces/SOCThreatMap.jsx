@@ -141,9 +141,10 @@ export default function SOCThreatMap() {
   // Real-time Event Bus via SSE
   useEffect(() => {
     const token = sessionStorage.getItem('caspmail_access_token')
+    const tenant = sessionStorage.getItem('caspmail_tenant') || 'acme-corp'
     if (!token) return
 
-    let url = '/api/soc/stream?token=' + encodeURIComponent(token)
+    let url = '/api/soc/stream?token=' + encodeURIComponent(token) + '&tenant_id=' + encodeURIComponent(tenant)
     const es = new EventSource(url)
 
     es.addEventListener('event', (e) => {

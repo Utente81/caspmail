@@ -73,10 +73,26 @@ function realIp(req) {
   return req.headers['x-real-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
 }
 
+function logWafEvent(ip, type, severity, message, mitre_technique) {
+  const tenantId = 'acme-corp'; // Default tenant for network-level events
+  const raw = {
+    mitre_tactic: type === 'rate_limit' ? 'Impact' : 'Initial Access',
+    mitre_technique,
+    ueba_score: severity === 'high' ? 85 : 40,
+    threat_intelligence: 'Native WAF Sensor'
+  };
+  pool.query(
+    `INSERT INTO soc_events (tenant_id, type, severity, source_ip, message, raw)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [tenantId, type, severity, ip, message, JSON.stringify(raw)]
+  ).catch(() => {});
+}
+
 // Global Firewall Hook
 app.addHook('onRequest', async (req, reply) => {
   const ip = realIp(req);
   if (blockedIps.has(ip)) {
+    logWafEvent(ip, 'firewall_block', 'medium', 'Blocked IP attempted connection', 'T1090');
     return reply.status(403).send({ error: 'Forbidden', message: 'Your IP address has been blocked by SOC policies.' });
   }
 });
@@ -86,7 +102,9 @@ await app.register(rateLimit, {
   max: 100,
   timeWindow: '1 minute',
   keyGenerator: realIp,
-  errorResponseBuilder(_req, context) {
+  errorResponseBuilder(req, context) {
+    const ip = realIp(req);
+    logWafEvent(ip, 'rate_limit', 'high', 'Global Rate Limit Exceeded (Possible DoS)', 'T1498');
     return {
       statusCode: 429,
       error: 'Too Many Requests',
@@ -104,7 +122,9 @@ const authRateLimit = {
       max: 10,
       timeWindow: '1 minute',
       keyGenerator: realIp,
-      errorResponseBuilder(_req, context) {
+      errorResponseBuilder(req, context) {
+        const ip = realIp(req);
+        logWafEvent(ip, 'rate_limit_auth', 'critical', 'Auth Rate Limit Exceeded (Brute-Force)', 'T1110');
         return {
           statusCode: 429,
           error: 'Too Many Requests',

@@ -21,6 +21,9 @@ spec:
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - NET_RAW
         command: ["/bin/bash", "-c"]
         args: 
           - |

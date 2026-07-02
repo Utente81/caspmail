@@ -57,6 +57,9 @@ spec:
           readOnlyRootFilesystem: true
           runAsGroup: 2001
           runAsUser: 1001
+          capabilities:
+            drop:
+            - NET_RAW
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:

@@ -19,6 +19,9 @@ spec:
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - NET_RAW
         env:
         - name: PGADMIN_DEFAULT_EMAIL
           value: admin@caspermail.com

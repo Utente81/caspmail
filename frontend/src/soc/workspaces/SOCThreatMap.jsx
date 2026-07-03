@@ -89,6 +89,11 @@ export default function SOCThreatMap() {
   const [error, setError]     = useState(null)
   
   // 3D Globe States
+  const demoArcs = [
+    { startLat: 37, startLng: -95, endLat: 41, endLng: 13, color: ['#ef4444', 'rgba(255,0,0,0)'], attack: { severity: 'critical', type: 'DDoS', source_ip: 'America -> Italy', created_at: Date.now() } },
+    { startLat: 41, startLng: 13, endLat: -25, endLng: 133, color: ['#ef4444', 'rgba(255,0,0,0)'], attack: { severity: 'critical', type: 'SQLi', source_ip: 'Italy -> Australia', created_at: Date.now() } },
+    { startLat: 51.5, startLng: -0.1, endLat: 48.8, endLng: 2.3, color: ['#ef4444', 'rgba(255,0,0,0)'], attack: { severity: 'critical', type: 'RCE', source_ip: 'London -> Paris', created_at: Date.now() } }
+  ]
   const [arcsData, setArcsData] = useState([])
   const [hexData, setHexData] = useState([])
   const [ringData, setRingData] = useState([])
@@ -163,7 +168,7 @@ export default function SOCThreatMap() {
           attack
         }
 
-        // Add animated arc
+        // Add arc to the map
         setArcsData(prev => [...prev.slice(-30), arc])
         
         // Add animated ripple/ring
@@ -253,6 +258,7 @@ export default function SOCThreatMap() {
             hexMargin={0.2}
             hexTopColor={d => SEV_COLOR[d.points[0]?.severity] || '#3b82f6'}
             hexSideColor={d => SEV_COLOR[d.points[0]?.severity] || '#3b82f6'}
+            hexAltitude={0.01}
             hexBinMerge={true}
             hexTransitionDuration={1000}
           />
@@ -303,17 +309,27 @@ export default function SOCThreatMap() {
              <Activity className="w-3 h-3 text-cyan-400" />
              Live Event Timeline
            </h3>
-           <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar pointer-events-auto">
-             {arcsData.slice(-10).reverse().map((arc, i) => (
-               <div key={i} className="flex-shrink-0 bg-slate-800/80 rounded px-3 py-2 border border-slate-700 text-xs min-w-[150px]">
-                 <div className="flex justify-between items-center mb-1">
-                   <span style={{ color: arc.color[0] }} className="font-bold uppercase tracking-wider">{arc.attack.severity}</span>
-                   <span className="text-slate-500 text-[10px]">{new Date(arc.attack.created_at || Date.now()).toLocaleTimeString()}</span>
-                 </div>
-                 <div className="text-slate-300 truncate font-mono text-[10px]">{arc.attack.source_ip}</div>
-                 <div className="text-slate-400 truncate">{arc.attack.type}</div>
-               </div>
-             ))}
+           <div className="overflow-x-auto overflow-y-auto max-h-[160px] pointer-events-auto no-scrollbar flex justify-center">
+             <table className="mx-auto text-center text-xs border-collapse w-full max-w-4xl">
+               <thead className="sticky top-0 bg-slate-900/90 backdrop-blur z-10">
+                 <tr className="border-b border-slate-700 text-slate-400">
+                   <th className="py-2 px-4 font-semibold text-center align-middle">Time</th>
+                   <th className="py-2 px-4 font-semibold text-center align-middle">Severity</th>
+                   <th className="py-2 px-4 font-semibold text-center align-middle">Source IP</th>
+                   <th className="py-2 px-4 font-semibold text-center align-middle">Type</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {arcsData.slice(-15).reverse().map((arc, i) => (
+                   <tr key={i} className="border-b border-slate-800 hover:bg-slate-700/80 transition-all cursor-default">
+                     <td className="py-2 px-4 text-slate-500 whitespace-nowrap text-center align-middle">{new Date(arc.attack.created_at || Date.now()).toLocaleTimeString()}</td>
+                     <td className="py-2 px-4 font-bold uppercase tracking-wider whitespace-nowrap text-center align-middle" style={{ color: arc.color[0] }}>{arc.attack.severity}</td>
+                     <td className="py-2 px-4 text-slate-300 font-mono whitespace-nowrap text-center align-middle">{arc.attack.source_ip}</td>
+                     <td className="py-2 px-4 text-slate-400 truncate max-w-[200px] text-center align-middle">{arc.attack.type}</td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
            </div>
         </div>
       </div>

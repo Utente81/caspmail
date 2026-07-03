@@ -253,13 +253,25 @@ export default async function mailRoutes(app) {
       return reply.status(413).send({ error: `Storage quota exceeded (${user.quota_mb} MB). Delete old messages to free space.` });
     }
 
+    // Anti-Spam: Check if the user has sent more than 10 messages in the last 15 minutes
+    const { rows: recentSent } = await pool.query(
+      `SELECT COUNT(*) as recent_count FROM e2ee_messages WHERE tenant_id = $1 AND from_email = $2 AND created_at > NOW() - INTERVAL '15 minutes'`,
+      [user.tenant_id, user.email]
+    );
+    const recentCount = parseInt(recentSent[0]?.recent_count || '0', 10);
+    
+    let recipient_flags = '{}';
+    if (recentCount >= 10) {
+      recipient_flags = '{"spam": true}';
+    }
+
     const id = uuidv4();
     const { rows } = await pool.query(
       `INSERT INTO e2ee_messages
-         (id, tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (id, tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [id, user.tenant_id, user.email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce]
+      [id, user.tenant_id, user.email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags]
     );
 
     reply.status(201).send(rows[0]);

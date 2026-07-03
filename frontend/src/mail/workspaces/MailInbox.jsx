@@ -211,6 +211,22 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
               // Non Ã¨ un JSON, fallback a testo semplice (email vecchie)
             }
 
+            let isPhishing = false;
+            try {
+              if (bodyText) {
+                const lower = bodyText.toLowerCase();
+                if (
+                  lower.includes('aggiorna password') ||
+                  lower.includes('urgent password reset') ||
+                  lower.includes('http://fake-login') ||
+                  lower.includes('verify your account') ||
+                  (lower.includes('http://') && lower.includes('login'))
+                ) {
+                  isPhishing = true;
+                }
+              }
+            } catch (e) {}
+
             const downloadAttachment = (att) => {
               const link = document.createElement('a')
               link.href = `data:${att.type};base64,${att.data}`
@@ -222,6 +238,15 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
 
             return (
               <>
+                {isPhishing && (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <AlertOctagon size={24} style={{ color: '#ef4444' }} />
+                    <div>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 600 }}>Phishing Warning</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem' }}>This message contains suspicious links or keywords often associated with phishing attacks. Do not click on any links or provide personal information.</p>
+                    </div>
+                  </div>
+                )}
                 <div className="mail-detail-body">{bodyText}</div>
                 {attachments.length > 0 && (
                   <div className="mail-detail-attachments" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>

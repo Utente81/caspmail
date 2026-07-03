@@ -198,6 +198,27 @@ export default async function adminRoutes(app) {
 
   // ─── Tenants ──────────────────────────────────────────────────────────────
 
+
+  app.get('/metrics', adminGuard, async (req, reply) => {
+    const { rows } = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM e2ee_messages) AS total_messages,
+        (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages) AS storage_used_bytes,
+        (SELECT COUNT(*) FROM e2ee_keys) AS users_with_keys
+    `);
+    reply.send({ data: rows[0] });
+  });
+
+  app.post('/retention/purge', adminGuard, async (req, reply) => {
+    const { rowCount } = await pool.query(`
+      DELETE FROM e2ee_messages
+      WHERE deleted_at IS NOT NULL
+        AND deleted_at < NOW() - INTERVAL '30 days'
+        AND legal_hold = FALSE
+    `);
+    reply.send({ purged_count: rowCount });
+  });
+
   app.get('/tenants', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset = parseInt(req.query.offset || '0', 10);
@@ -350,6 +371,22 @@ export default async function adminRoutes(app) {
     );
 
     reply.status(auditAction === 'create' ? 201 : 200).send(user);
+  });
+
+
+  app.patch('/users/:id/legal-hold', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { legal_hold } = req.body;
+    try {
+      const { rows } = await pool.query(
+        'UPDATE users SET legal_hold = $1 WHERE id = $2 RETURNING *',
+        [legal_hold, id]
+      );
+      if (rows.length === 0) return reply.status(404).send({ error: 'User not found' });
+      reply.send(rows[0]);
+    } catch (e) {
+      reply.status(500).send({ error: e.message });
+    }
   });
 
   app.put('/users/:id', adminGuard, async (req, reply) => {

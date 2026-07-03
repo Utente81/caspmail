@@ -248,32 +248,63 @@ export default function SOCOverview() {
         </div>
       </div>
 
-      {/* Alerts & Cases */}
+      {/* Recent Alerts - Full Width */}
+      <div className="soc-panel" style={{ marginBottom: 'var(--gap)' }}>
+        <div className="soc-panel-header">
+          <h3 className="soc-panel-title">Recent Alerts</h3>
+        </div>
+        {loading ? <TableSkeleton rows={5} cols={5} /> : (
+          <table className="soc-table">
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Message</th>
+                <th>Type</th>
+                <th>Time</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map(a => (
+                <tr key={a.id}>
+                  <td><SeverityBadge severity={a.severity} /></td>
+                  <td className="soc-td-message" title={a.message}>{a.message}</td>
+                  <td className="soc-td-mono soc-td-muted">{a.event_type || a.type || "N/A"}</td>
+                  <td className="soc-td-muted">{formatDate(a.created_at || a.time)}</td>
+                  <td><StatusBadge status={a.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Cases & Health - Two Columns */}
       <div className="soc-two-col" style={{ marginBottom: 'var(--gap)' }}>
-        {/* Recent Alerts */}
+        {/* Recent Cases */}
         <div className="soc-panel">
           <div className="soc-panel-header">
-            <h3 className="soc-panel-title">Recent Alerts</h3>
+            <h3 className="soc-panel-title">Recent Cases</h3>
           </div>
-          {loading ? <TableSkeleton rows={5} cols={4} /> : (
+          {loading ? <TableSkeleton rows={3} cols={5} /> : (
             <table className="soc-table">
               <thead>
                 <tr>
+                  <th>ID</th>
+                  <th>Title</th>
                   <th>Severity</th>
-                  <th>Message</th>
-                  <th>Type</th>
-                  <th>Time</th>
                   <th>Status</th>
+                  <th>Assigned</th>
                 </tr>
               </thead>
               <tbody>
-                {alerts.map(a => (
-                  <tr key={a.id}>
-                    <td><SeverityBadge severity={a.severity} /></td>
-                    <td className="soc-td-message" title={a.message}>{a.message}</td>
-                    <td className="soc-td-mono soc-td-muted">{a.event_type || a.type || "N/A"}</td>
-                    <td className="soc-td-muted">{formatDate(a.created_at || a.time)}</td>
-                    <td><StatusBadge status={a.status} /></td>
+                {cases.map(c => (
+                  <tr key={c.id.substring(0,8)}>
+                    <td className="soc-td-mono soc-td-muted">{c.id.substring(0,8)}</td>
+                    <td className="soc-td-message" title={c.title}>{c.title}</td>
+                    <td><SeverityBadge severity={c.severity} /></td>
+                    <td><StatusBadge status={c.status} /></td>
+                    <td className="soc-td-muted">{c.assigned_to}</td>
                   </tr>
                 ))}
               </tbody>
@@ -281,55 +312,21 @@ export default function SOCOverview() {
           )}
         </div>
 
-        {/* Right column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
-          {/* Recent Cases */}
-          <div className="soc-panel">
-            <div className="soc-panel-header">
-              <h3 className="soc-panel-title">Recent Cases</h3>
-            </div>
-            {loading ? <TableSkeleton rows={3} cols={4} /> : (
-              <table className="soc-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Title</th>
-                    <th>Severity</th>
-                    <th>Status</th>
-                    <th>Assigned</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cases.map(c => (
-                    <tr key={c.id.substring(0,8)}>
-                      <td className="soc-td-mono soc-td-muted">{c.id.substring(0,8)}</td>
-                      <td className="soc-td-message" title={c.title}>{c.title}</td>
-                      <td><SeverityBadge severity={c.severity} /></td>
-                      <td><StatusBadge status={c.status} /></td>
-                      <td className="soc-td-muted">{c.assigned_to}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+        {/* System Health */}
+        <div className="soc-panel">
+          <div className="soc-panel-header">
+            <h3 className="soc-panel-title">System Health</h3>
           </div>
-
-          {/* System Health */}
-          <div className="soc-panel">
-            <div className="soc-panel-header">
-              <h3 className="soc-panel-title">System Health</h3>
+          {loading ? <TableSkeleton rows={5} cols={2} /> : (
+            <div className="soc-health-list">
+              {health.map(h => (
+                <div key={h.name} className="soc-health-row">
+                  <span className="soc-health-name">{h.name}</span>
+                  <span className={`soc-health-status ${h.status}`}>{h.status}</span>
+                </div>
+              ))}
             </div>
-            {loading ? <TableSkeleton rows={5} cols={2} /> : (
-              <div className="soc-health-list">
-                {health.map(h => (
-                  <div key={h.name} className="soc-health-row">
-                    <span className="soc-health-name">{h.name}</span>
-                    <span className={`soc-health-status ${h.status}`}>{h.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </div>

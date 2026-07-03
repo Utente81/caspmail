@@ -148,7 +148,7 @@ export default function SOCThreatMap() {
             startLng: coords[0] + (Math.random() - 0.5) * 0.5,
             endLat: DEST_LAT + jitterLat,
             endLng: DEST_LNG + jitterLng,
-            color: [color, 'rgba(255, 255, 255, 0)'],
+            color: color,
             altitude: 0.1 + Math.random() * 0.4,
             dashInitialGap: Math.random(),
             attack
@@ -196,7 +196,7 @@ export default function SOCThreatMap() {
           startLng: coords[0] + (Math.random() - 0.5) * 0.5,
           endLat: DEST_LAT + jitterLat,
           endLng: DEST_LNG + jitterLng,
-          color: [color, 'rgba(255, 255, 255, 0)'],
+          color: color,
           altitude: 0.1 + Math.random() * 0.4,
           dashInitialGap: Math.random(),
           attack
@@ -266,9 +266,9 @@ export default function SOCThreatMap() {
             arcColor={d => d.color}
             arcAltitudeAutoScale={0.4}
             arcAltitude={d => d.altitude || 0.3}
-            arcDashLength={0.4}
-            arcDashGap={0.6}
-            arcDashInitialGap={d => d.dashInitialGap || 0}
+            arcDashLength={1}
+            arcDashGap={0}
+            arcDashInitialGap={0}
             arcDashAnimateTime={1000}
             arcStroke={0.4}
             arcCircularResolution={64}

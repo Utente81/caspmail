@@ -29,10 +29,10 @@ jobs:
           docker build -t ghcr.io/$REPO/backend:$REF .
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.5.0 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0.15.11 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        uses: anchore/sbom-action/download-syft@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.15.11 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
 
       - name: Generate SBOM
         env:
@@ -42,7 +42,7 @@ jobs:
           syft ghcr.io/$REPO/backend:$REF -o spdx-json=sbom-backend.spdx.json
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           files: sbom-backend.spdx.json
           generate_release_notes: true

@@ -150,7 +150,7 @@ export default function SOCThreatMap() {
             endLng: DEST_LNG + jitterLng,
             color: [color, 'rgba(255, 255, 255, 0)'],
             altitude: 0.1 + Math.random() * 0.4,
-            dashInitialGap: Math.random() * 2,
+            dashInitialGap: Math.random(),
             attack
           })
           newRingData.push({
@@ -198,7 +198,7 @@ export default function SOCThreatMap() {
           endLng: DEST_LNG + jitterLng,
           color: [color, 'rgba(255, 255, 255, 0)'],
           altitude: 0.1 + Math.random() * 0.4,
-          dashInitialGap: Math.random() * 2,
+          dashInitialGap: Math.random(),
           attack
         }
 
@@ -266,8 +266,8 @@ export default function SOCThreatMap() {
             arcColor={d => d.color}
             arcAltitudeAutoScale={0.4}
             arcAltitude={d => d.altitude || 0.3}
-            arcDashLength={0.8}
-            arcDashGap={0.1}
+            arcDashLength={0.4}
+            arcDashGap={0.6}
             arcDashInitialGap={d => d.dashInitialGap || 0}
             arcDashAnimateTime={1000}
             arcStroke={0.4}

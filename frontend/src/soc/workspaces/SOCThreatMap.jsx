@@ -140,11 +140,14 @@ export default function SOCThreatMap() {
         const coords = ipToLngLat(attack.source_ip)
         if (coords) {
           const color = SEV_COLOR[attack.severity] || '#3b82f6'
+          // Add a small jitter so overlapping lines become visible
+          const jitterLat = (Math.random() - 0.5) * 1.5
+          const jitterLng = (Math.random() - 0.5) * 1.5
           newArcsData.push({
-            startLat: coords[1],
-            startLng: coords[0],
-            endLat: DEST_LAT,
-            endLng: DEST_LNG,
+            startLat: coords[1] + (Math.random() - 0.5) * 0.5,
+            startLng: coords[0] + (Math.random() - 0.5) * 0.5,
+            endLat: DEST_LAT + jitterLat,
+            endLng: DEST_LNG + jitterLng,
             color: [color, 'rgba(255, 255, 255, 0)'],
             attack
           })
@@ -184,11 +187,13 @@ export default function SOCThreatMap() {
         if (!coords) return
 
         const color = SEV_COLOR[attack.severity] || '#3b82f6'
+        const jitterLat = (Math.random() - 0.5) * 1.5
+        const jitterLng = (Math.random() - 0.5) * 1.5
         const arc = {
-          startLat: coords[1],
-          startLng: coords[0],
-          endLat: DEST_LAT,
-          endLng: DEST_LNG,
+          startLat: coords[1] + (Math.random() - 0.5) * 0.5,
+          startLng: coords[0] + (Math.random() - 0.5) * 0.5,
+          endLat: DEST_LAT + jitterLat,
+          endLng: DEST_LNG + jitterLng,
           color: [color, 'rgba(255, 255, 255, 0)'],
           attack
         }
@@ -255,6 +260,8 @@ export default function SOCThreatMap() {
             arcEndLat={d => d.endLat}
             arcEndLng={d => d.endLng}
             arcColor={d => d.color}
+            arcAltitudeAutoScale={0.4}
+            arcAltitude={d => d.altitude || (0.2 + Math.random() * 0.3)}
             arcDashLength={0.8}
             arcDashGap={0.1}
             arcDashAnimateTime={800}

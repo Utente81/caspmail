@@ -19,6 +19,8 @@ spec:
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsUser: 5050
         env:
         - name: PGADMIN_DEFAULT_EMAIL
           value: admin@caspermail.com
@@ -32,10 +34,18 @@ spec:
         - name: pgadmin-servers
           mountPath: /pgadmin4/servers.json
           subPath: servers.json
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: pgadmin-data
+          mountPath: /var/lib/pgadmin
       volumes:
       - name: pgadmin-servers
         configMap:
           name: pgadmin-servers
+      - name: tmp-volume
+        emptyDir: {}
+      - name: pgadmin-data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

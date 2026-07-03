@@ -18,11 +18,10 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: backend
-        image: ghcr.io/utente81/caspmail-backend:main
         securityContext:
-          runAsNonRoot: true
-          allowPrivilegeEscalation: false
-        imagePullPolicy: Always
+          readOnlyRootFilesystem: true
+        image: caspermail-backend:latest
+        imagePullPolicy: Never
         env:
         - name: NODE_ENV
           value: production
@@ -37,7 +36,7 @@ spec:
         - name: DB_NAME
           value: caspermail
         - name: DATABASE_SSL
-          value: "false"
+          value: "true"
         - name: KEYCLOAK_ISSUER
           value: https://auth.secure.internal/realms/caspermail
         - name: KEYCLOAK_JWKS_URI
@@ -56,6 +55,8 @@ spec:
         - name: secrets
           mountPath: /run/secrets
           readOnly: true
+        - name: tmp
+          mountPath: /tmp
         readinessProbe:
           httpGet:
             path: /health
@@ -63,6 +64,8 @@ spec:
           initialDelaySeconds: 10
           periodSeconds: 10
       volumes:
+      - name: tmp
+        emptyDir: {}
       - name: secrets
         secret:
           secretName: casper-secrets

@@ -15,12 +15,22 @@ spec:
       labels:
         app: keycloak
     spec:
+      initContainers:
+      - name: init-keycloak
+        image: quay.io/keycloak/keycloak:25.0
+        command: ["/bin/sh", "-c", "cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/"]
+        securityContext:
+          runAsUser: 1000
+        volumeMounts:
+        - name: quarkus-lib
+          mountPath: /tmp/quarkus
       containers:
       - name: keycloak
         image: quay.io/keycloak/keycloak:25.0
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
         command: ["/bin/bash", "-c"]
         args: 
           - |
@@ -72,6 +82,20 @@ spec:
             port: 9000
           initialDelaySeconds: 60
           periodSeconds: 10
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: data-volume
+          mountPath: /opt/keycloak/data
+        - name: quarkus-lib
+          mountPath: /opt/keycloak/lib/quarkus
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: data-volume
+        emptyDir: {}
+      - name: quarkus-lib
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

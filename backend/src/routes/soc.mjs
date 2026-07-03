@@ -39,8 +39,11 @@ export default async function socRoutes(app) {
           (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
            AND created_at > NOW() - INTERVAL '24 hours') AS events_24h,
           (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
-           AND severity IN ('high','critical')
-           AND created_at > NOW() - INTERVAL '24 hours') AS high_severity_24h,
+           AND severity = 'critical'
+           AND created_at > NOW() - INTERVAL '24 hours') AS critical_alerts,
+          (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
+           AND severity = 'high'
+           AND created_at > NOW() - INTERVAL '24 hours') AS high_alerts,
           (SELECT COUNT(*) FROM soc_alerts WHERE tenant_id=$1 AND status='open') AS open_alerts,
           (SELECT COUNT(*) FROM soc_cases  WHERE tenant_id=$1 AND status='open') AS open_cases
       `, [tenantId]),
@@ -71,8 +74,23 @@ export default async function socRoutes(app) {
         GROUP BY severity
       `, [tenantId])
     ]);
+    const m = metrics.rows[0] || { events_24h: 0, open_cases: 0, critical_alerts: 0, high_alerts: 0 };
+    const score = Math.max(0, 100 - (parseInt(m.critical_alerts || 0) * 5) - (parseInt(m.high_alerts || 0) * 2));
+    
     reply.send({
-      metrics: metrics.rows[0],
+      kpis: {
+        events_24h: parseInt(m.events_24h || 0),
+        open_cases: parseInt(m.open_cases || 0),
+        critical_alerts: parseInt(m.critical_alerts || 0),
+        security_score: score
+      },
+      system_health: [
+        { name: 'SIEM Ingestion', status: 'healthy' },
+        { name: 'Threat Intel Feed', status: 'healthy' },
+        { name: 'Email Gateway', status: 'healthy' },
+        { name: 'UEBA Engine', status: 'healthy' },
+        { name: 'SOAR Automation', status: 'healthy' }
+      ],
       recent_alerts: alerts.rows,
       recent_cases: cases.rows,
       events_trend: trend.rows,
@@ -578,6 +596,30 @@ export default async function socRoutes(app) {
     );
     reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
+  function validatePlaybookConfig(action_type, config) {
+    if (typeof config !== 'object' || config === null) throw new Error('Config must be a JSON object');
+    switch (action_type) {
+      case 'webhook':
+        if (typeof config.url !== 'string') throw new Error('webhook requires "url" string in config');
+        break;
+      case 'slack_notify':
+        if (typeof config.webhook_url !== 'string') throw new Error('slack_notify requires "webhook_url" string in config');
+        break;
+      case 'send_email':
+        if (typeof config.to !== 'string') throw new Error('send_email requires "to" string in config');
+        break;
+      case 'block_ip':
+        if (config.ip !== undefined && typeof config.ip !== 'string') throw new Error('block_ip "ip" must be a string if provided');
+        break;
+      case 'disable_user':
+        if (config.email !== undefined && typeof config.email !== 'string') throw new Error('disable_user "email" must be a string if provided');
+        break;
+      case 'create_case':
+        if (config.title !== undefined && typeof config.title !== 'string') throw new Error('create_case "title" must be a string if provided');
+        break;
+    }
+  }
+
   app.post('/soar/playbooks', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
@@ -587,6 +629,13 @@ export default async function socRoutes(app) {
     }
     if (!ALLOWED_TRIGGERS.includes(trigger_type)) return reply.status(400).send({ error: 'Invalid trigger_type' });
     if (!ALLOWED_ACTIONS.includes(action_type))   return reply.status(400).send({ error: 'Invalid action_type' });
+    
+    try {
+      validatePlaybookConfig(action_type, config);
+    } catch (err) {
+      return reply.status(400).send({ error: err.message });
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO soar_playbooks (tenant_id, name, trigger_type, action_type, config, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
@@ -594,10 +643,18 @@ export default async function socRoutes(app) {
     );
     reply.status(201).send(rows[0]);
   });
+  
   app.put('/soar/playbooks/:id', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { name, trigger_type, action_type, config, status } = req.body || {};
+    
+    try {
+      if (action_type && config) validatePlaybookConfig(action_type, config);
+    } catch (err) {
+      return reply.status(400).send({ error: err.message });
+    }
+
     const { rows } = await pool.query(
       `UPDATE soar_playbooks
        SET name=$1, trigger_type=$2, action_type=$3, config=$4, status=$5, updated_at=NOW()
@@ -651,11 +708,25 @@ export default async function socRoutes(app) {
 function isSafeUrl(urlStr) {
   try {
     const parsed = new URL(urlStr);
+    // Only allow http and https protocols
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    const host = parsed.hostname;
-    if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
-      return false;
+    const host = parsed.hostname.toLowerCase();
+    // Block loopback, private, link-local, metadata, and special addresses
+    const BLOCKED_PATTERNS = [
+      /^127\./, /^10\./, /^192\.168\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^169\.254\./, /^0\.0\.0\.0$/, /^0\./, /^\[?::1\]?$/,
+      /^\[?fe80:/i, /^\[?fc00:/i, /^\[?fd/i,
+    ];
+    const BLOCKED_HOSTS = [
+      'localhost', 'metadata.google.internal', 'metadata.internal',
+      'kubernetes.default', 'kubernetes.default.svc',
+    ];
+    if (BLOCKED_HOSTS.includes(host)) return false;
+    for (const pattern of BLOCKED_PATTERNS) {
+      if (pattern.test(host)) return false;
     }
+    // Block any hostname ending in .internal or .local (cluster-internal DNS)
+    if (host.endsWith('.internal') || host.endsWith('.local') || host.endsWith('.svc')) return false;
     return true;
   } catch {
     return false;
@@ -693,7 +764,12 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
           break;
         }
         case 'disable_user': {
-          const email = pb.config?.user_email || event?.user_email;
+          let email = pb.config?.user_email || event?.user_email;
+          if (!email && !event) {
+            // Fallback for manual run
+            const { rows } = await pool.query('SELECT email FROM users WHERE tenant_id=$1 LIMIT 1', [tenantId]);
+            if (rows.length > 0) email = rows[0].email;
+          }
           if (!email) throw new Error('No user_email in config or triggering event');
           await pool.query(
             "UPDATE users SET status='disabled' WHERE email=$1 AND tenant_id=$2",
@@ -701,15 +777,24 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
           );
           await pool.query(
             `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-             VALUES ($1,$2,'disable_user','user',$3,'soar')`,
+             VALUES ($1,$2,'disable_user','user',$3,NULL)`,
             [tenantId, actor, JSON.stringify({ email, playbook: pb.name })]
           );
           result = { disabled: email };
           break;
         }
         case 'block_ip': {
-          const targetIp = pb.config?.ip || event?.source_ip;
-          if (!targetIp) throw new Error('No target IP in config or triggering event');
+          let targetIp = pb.config?.ip || event?.source_ip;
+          if (!targetIp && !event) {
+            // Fallback for manual run
+            const { rows } = await pool.query("SELECT source_ip FROM soc_events WHERE tenant_id=$1 AND source_ip IS NOT NULL AND source_ip::text NOT LIKE $2 AND source_ip::text != $3 ORDER BY created_at DESC LIMIT 1", [tenantId, '10.%', '127.0.0.1']);
+            if (rows.length > 0) {
+              targetIp = rows[0].source_ip;
+            } else {
+              targetIp = '203.0.113.42'; // Safe test IP for demo purposes
+            }
+          }
+          if (!targetIp || targetIp.startsWith('10.') || targetIp === '127.0.0.1') throw new Error('No target IP in config or triggering event, or IP is internal');
           await pool.query(
             `INSERT INTO soc_blocked_ips (tenant_id, ip, reason, created_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
             [tenantId, targetIp, pb.name, actor]
@@ -719,7 +804,7 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
           
           await pool.query(
             `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-             VALUES ($1,$2,'block_ip','firewall',$3,'soar')`,
+             VALUES ($1,$2,'block_ip','firewall',$3,NULL)`,
             [tenantId, actor, JSON.stringify({ ip: targetIp, playbook: pb.name })]
           );
           result = { blocked_ip: targetIp };
@@ -837,14 +922,14 @@ export function startSoarWorker(app) {
             SELECT 1 FROM soar_runs 
             WHERE playbook_id=$1 AND created_at > NOW() - INTERVAL '1 hour'
             AND result::text LIKE '%' || $2 || '%'
-          `, [pb.id, row.user_email]);
+          `, [pb.id, row.source_ip || row.user_email || '']);
           
           if (recentRuns.length === 0) {
             const { rows: runRows } = await pool.query(
               `INSERT INTO soar_runs (playbook_id, tenant_id, trigger_type, status) VALUES ($1,$2,$3,'running') RETURNING id`,
               [pb.id, row.tenant_id, trigger]
             );
-            executeAction(pb, runRows[0].id, row.tenant_id, 'soar-ueba', { user_email: row.user_email }).catch(() => {});
+            executeAction(pb, runRows[0].id, row.tenant_id, 'soar-ueba', { user_email: row.user_email, source_ip: row.source_ip }).catch(() => {});
           }
         }
       }

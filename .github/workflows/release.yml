@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          persist-credentials: false
 
       # Note: For this to work fully in a real environment, you need a Container Registry.
       # We are simulating the process here by building the image locally.

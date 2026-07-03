@@ -132,31 +132,7 @@ async function provisionKeycloakUser({ email, name, role, password, enabled = tr
 }
 
 async function syncKeycloakUserStatus({ email, name, role, status }) {
-  const token = await keycloakAdminToken();
-  const keycloakUser = await findKeycloakUser(token, email);
-  if (!keycloakUser) return null;
-
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  await keycloakJson(
-    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}`,
-    {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({
-        ...keycloakUser,
-        email,
-        firstName: name || email,
-        enabled: status === 'active',
-        emailVerified: true,
-      }),
-    }
-  );
-
-  if (status === 'active') {
-    await setKeycloakUserRole(token, keycloakUser.id, role);
-  }
-
-  return keycloakUser.id;
+  return await provisionKeycloakUser({ email, name, role, enabled: status === 'active' });
 }
 
 async function resetKeycloakUserPassword({ email, password }) {

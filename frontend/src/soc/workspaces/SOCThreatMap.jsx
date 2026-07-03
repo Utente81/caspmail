@@ -132,6 +132,31 @@ export default function SOCThreatMap() {
         }
       })
       setHexData(newHexData)
+
+      // Initialize Arcs and Rings from recent events
+      const newArcsData = []
+      const newRingData = []
+      ;(d.recent_events || []).reverse().forEach(attack => {
+        const coords = ipToLngLat(attack.source_ip)
+        if (coords) {
+          const color = SEV_COLOR[attack.severity] || '#3b82f6'
+          newArcsData.push({
+            startLat: coords[1],
+            startLng: coords[0],
+            endLat: DEST_LAT,
+            endLng: DEST_LNG,
+            color: [color, 'rgba(255, 255, 255, 0)'],
+            attack
+          })
+          newRingData.push({
+            lat: coords[1],
+            lng: coords[0],
+            color: color
+          })
+        }
+      })
+      setArcsData(newArcsData)
+      setRingData(newRingData)
     } catch (err) {
       setError(err.message)
     } finally {

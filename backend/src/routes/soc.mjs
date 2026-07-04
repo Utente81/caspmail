@@ -6,7 +6,7 @@ export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
 
 function zeroTrustGuardHook(req, reply, done) {
-  const ip = req.headers['x-forwarded-for']?.split(',')[0].strip() || req.ip || req.socket.remoteAddress || '';
+  const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.socket.remoteAddress || '';
   const isVPN = /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) || ip === '127.0.0.1' || ip === '::1';
   
   const now = new Date();

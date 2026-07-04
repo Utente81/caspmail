@@ -140,7 +140,7 @@ function PlaybookRow({ pb, onToggle, onDelete, onEdit, onRun }) {
   const [loadingRuns, setLoadingRuns] = useState(false)
 
   async function loadRuns() {
-    if (runs) { setExpanded(v => !v); return }
+    if (expanded) { setExpanded(false); return }
     setLoadingRuns(true)
     try {
       const res = await authFetch(`/api/soc/soar/playbooks/${pb.id}/runs?limit=10`)

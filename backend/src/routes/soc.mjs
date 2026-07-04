@@ -43,7 +43,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     if (rows[0]?.tenant_id) return rows[0].tenant_id;
     const roles = user?.realm_access?.roles || user?.roles || [];
     if (roles.some((role) => ['admin', 'casper_admin'].includes(role))) {
-      return req.query?.tenant_id || null;
+      return req.query?.tenant_id || 'system';
     }
     return null;
   }

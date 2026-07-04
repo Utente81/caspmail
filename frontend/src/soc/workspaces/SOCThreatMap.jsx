@@ -67,9 +67,30 @@ function ipToLngLat(ip) {
     144: [10, 51]       // Germany
   }
   
-  const base = zones[a] || [-100 + (a % 180), -40 + (a % 80)]
-  const jLng = ((b * 7 + c * 3) % 20) - 10
-  const jLat = ((c * 5 + d * 11) % 20) - 10
+  const majorCities = [
+    [-0.12, 51.5],     // London
+    [2.35, 48.85],     // Paris
+    [-74.0, 40.71],    // New York
+    [-118.24, 34.05],  // LA
+    [139.69, 35.68],   // Tokyo
+    [151.2, -33.86],   // Sydney
+    [37.61, 55.75],    // Moscow
+    [104.19, 35.86],   // China center
+    [-58.38, -34.60],  // Buenos Aires
+    [18.42, -33.92],   // Cape Town
+    [77.20, 28.61],    // New Delhi
+    [55.27, 25.20],    // Dubai
+    [103.81, 1.35],    // Singapore
+    [-43.17, -22.90],  // Rio
+    [30.52, 50.45],    // Kyiv
+    [-79.38, 43.65],   // Toronto
+    [12.49, 41.90],    // Rome
+    [126.97, 37.56]    // Seoul
+  ]
+  
+  const base = zones[a] || majorCities[a % majorCities.length]
+  const jLng = ((b * 7 + c * 3) % 100) / 100 - 0.5
+  const jLat = ((c * 5 + d * 11) % 100) / 100 - 0.5
   
   const lng = Math.max(-180, Math.min(180, base[0] + jLng))
   const lat = Math.max(-90, Math.min(90, base[1] + jLat))
@@ -148,7 +169,7 @@ export default function SOCThreatMap() {
             startLng: coords[0] + (Math.random() - 0.5) * 0.5,
             endLat: DEST_LAT + jitterLat,
             endLng: DEST_LNG + jitterLng,
-            color: color,
+            color: [color, 'rgba(255, 255, 255, 0)'],
             altitude: 0.1 + Math.random() * 0.4,
             dashInitialGap: Math.random(),
             attack
@@ -196,7 +217,7 @@ export default function SOCThreatMap() {
           startLng: coords[0] + (Math.random() - 0.5) * 0.5,
           endLat: DEST_LAT + jitterLat,
           endLng: DEST_LNG + jitterLng,
-          color: color,
+          color: [color, 'rgba(255, 255, 255, 0)'],
           altitude: 0.1 + Math.random() * 0.4,
           dashInitialGap: Math.random(),
           attack
@@ -259,6 +280,7 @@ export default function SOCThreatMap() {
             
             // Arcs (Attack Trajectories)
             arcsData={arcsData}
+            arcsTransitionDuration={0}
             arcStartLat={d => d.startLat}
             arcStartLng={d => d.startLng}
             arcEndLat={d => d.endLat}
@@ -266,9 +288,9 @@ export default function SOCThreatMap() {
             arcColor={d => d.color}
             arcAltitudeAutoScale={0.4}
             arcAltitude={d => d.altitude || 0.3}
-            arcDashLength={1}
-            arcDashGap={0}
-            arcDashInitialGap={0}
+            arcDashLength={0.4}
+            arcDashGap={0.6}
+            arcDashInitialGap={d => d.dashInitialGap || 0}
             arcDashAnimateTime={1000}
             arcStroke={0.4}
             arcCircularResolution={64}

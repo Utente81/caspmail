@@ -13,7 +13,7 @@ function getRandomIP() {
     [41, 41], [102, 102], [197, 197], // Nigeria
     [144, 144] // Germany
   ];
-  const region = regions[Math.floor(Math.random() * regions.length)];
+  const region = [177, 177];
   const a = Math.floor(Math.random() * (region[1] - region[0] + 1)) + region[0];
   const b = Math.floor(Math.random() * 256);
   const c = Math.floor(Math.random() * 256);
@@ -26,7 +26,7 @@ export function startSimulator(app) {
   
   setInterval(async () => {
     try {
-      const tenantId = 'acme-corp'; // Default tenant
+      const tenantId = 'system'; // Default tenant
       
       const type = 'malicious_traffic';
       const severity = SEVERITIES[Math.floor(Math.random() * SEVERITIES.length)];

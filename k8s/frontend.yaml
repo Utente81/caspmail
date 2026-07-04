@@ -23,6 +23,8 @@ spec:
         - containerPort: 8080
           protocol: TCP
         volumeMounts:
+        - mountPath: /usr/share/nginx/html
+          name: html-volume
         - mountPath: /etc/nginx/conf.d/default.conf
           name: nginx-config
           subPath: default.conf
@@ -35,6 +37,10 @@ spec:
         - mountPath: /var/log/nginx
           name: log-volume
       volumes:
+      - name: html-volume
+        hostPath:
+          path: /home/ubuntu/caspmail/new/frontend/dist
+          type: Directory
       - configMap:
           defaultMode: 420
           name: casper-frontend-config

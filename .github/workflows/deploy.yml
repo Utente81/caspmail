@@ -22,6 +22,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Downcase REPO
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:

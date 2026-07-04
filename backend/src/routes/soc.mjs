@@ -514,6 +514,14 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     reply.send({ ok: true });
   });
   // ─── SOAR — Playbooks ─────────────────────────────────────────────────────
+  function validatePlaybookConfig(action_type, config) {
+    if (action_type === 'webhook' && !config.url) return 'Missing url in config for webhook';
+    if (action_type === 'slack_notify' && !config.webhook_url) return 'Missing webhook_url in config for slack_notify';
+    if (action_type === 'disable_user' && !config.user_email) return 'Missing user_email in config for disable_user';
+    if (action_type === 'send_email' && !config.to) return 'Missing to in config for send_email';
+    return null;
+  }
+
   const ALLOWED_TRIGGERS = ['alert_critical','alert_high','ueba_risk_75','ueba_risk_50','login_failure','manual'];
   const ALLOWED_ACTIONS  = ['webhook','disable_user','block_ip','create_case','send_email','slack_notify'];
   app.get('/soar/playbooks', socGuard, async (req, reply) => {
@@ -534,6 +542,10 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     }
     if (!ALLOWED_TRIGGERS.includes(trigger_type)) return reply.status(400).send({ error: 'Invalid trigger_type' });
     if (!ALLOWED_ACTIONS.includes(action_type))   return reply.status(400).send({ error: 'Invalid action_type' });
+
+    const configError = validatePlaybookConfig(action_type, config);
+    if (configError) return reply.status(400).send({ error: configError });
+
     const { rows } = await pool.query(
       `INSERT INTO soar_playbooks (tenant_id, name, trigger_type, action_type, config, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
@@ -545,6 +557,10 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { name, trigger_type, action_type, config, status } = req.body || {};
+
+    const configError = validatePlaybookConfig(action_type, config || {});
+    if (configError) return reply.status(400).send({ error: configError });
+
     const { rows } = await pool.query(
       `UPDATE soar_playbooks
        SET name=$1, trigger_type=$2, action_type=$3, config=$4, status=$5, updated_at=NOW()

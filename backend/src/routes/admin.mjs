@@ -44,7 +44,7 @@ async function keycloakAdminToken() {
 
 async function findKeycloakUser(token, email) {
   const users = await keycloakJson(
-    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users?username=${encodeURIComponent(email)}&exact=true`,
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users?email=${encodeURIComponent(email)}&exact=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return users?.find((user) => user.username === email || user.email === email) || null;
@@ -555,6 +555,24 @@ export default async function adminRoutes(app) {
 
     let query = 'SELECT * FROM audit_log WHERE 1=1';
     const params = [];
+
+    const userRoles = req.user?.realm_access?.roles || [];
+    const isGlobalAdmin = userRoles.includes('casper_admin');
+
+    if (!isGlobalAdmin) {
+      let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
+      if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
+        const email = req.user.email || req.user.preferred_username;
+        const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
+        if (rows.length > 0) tenantId = rows[0].tenant_id;
+      }
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+      params.push(tenantId);
+      query += ` AND tenant_id = $${params.length}`;
+    } else if (req.query.tenant_id) {
+      params.push(req.query.tenant_id);
+      query += ` AND tenant_id = $${params.length}`;
+    }
 
     if (search) {
       params.push(`%${search}%`);

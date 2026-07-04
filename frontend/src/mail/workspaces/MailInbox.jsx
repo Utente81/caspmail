@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, Mail, Lock, Unlock, AlertCircle, ChevronLeft, Paperclip, Download, Trash2, XCircle, Star, Archive, AlertOctagon, Reply, Forward } from 'lucide-react'
+import { RefreshCw, Mail, Lock, Unlock, AlertCircle, ChevronLeft, Paperclip, Download, Trash2, XCircle, Star, Archive, AlertOctagon, Reply, Forward, ShieldAlert } from 'lucide-react'
 import { decryptMessage } from '../crypto.js'
 
 function apiGet(path) {
@@ -109,6 +109,21 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
     }
   }
 
+  async function handleReportPhishing() {
+    if (!window.confirm('Report this message as a phishing attempt to the SOC team?')) return;
+    try {
+      const res = await fetch(`/api/v4/soc/phishing/report/${msg.id}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token')}` }
+      });
+      const data = await res.json();
+      alert(data.message || 'Reported');
+      onDelete(msg.id); // Remove from view
+    } catch (err) {
+      alert('Error reporting phishing: ' + err.message);
+    }
+  }
+
   function handleReply() {
     if (!decrypted) return
     let oldBody = decrypted.body
@@ -164,6 +179,9 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
           </button>
           <button onClick={handleForward} className="mail-btn-icon" title="Forward" style={{color: '#60a5fa'}}>
             <Forward size={16} />
+          </button>
+          <button onClick={handleReportPhishing} className="mail-btn-icon" title="Report Phishing" style={{color: '#ef4444', border: '1px solid #ef444433', borderRadius: '4px'}}>
+            <ShieldAlert size={16} />
           </button>
           <button onClick={() => onFlag(msg.id, {important: true})} className="mail-btn-icon" title="Mark Important" style={{color: '#fbbf24'}}>
             <Star size={16} />

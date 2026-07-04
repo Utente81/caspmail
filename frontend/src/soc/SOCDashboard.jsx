@@ -27,6 +27,7 @@ import SOCThreatMap from './workspaces/SOCThreatMap'
 import SOCCompliance from './workspaces/SOCCompliance'
 import SOCAuditLog from './workspaces/SOCAuditLog'
 import SOCSOAR from './workspaces/SOCSOAR'
+import SOCPhishing from './workspaces/SOCPhishing'
 import { ensureFreshToken } from '../auth/tokenRefresh.js'
 
 const NAV = [
@@ -57,6 +58,7 @@ const NAV = [
     items: [
       { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
       { id: 'audit-log', label: 'Audit Log', icon: ClipboardList },
+      { id: 'phishing', label: 'Phishing Drill', icon: Mail },
     ],
   },
 ]
@@ -199,6 +201,7 @@ export default function SOCDashboard() {
       case 'soar':       return <SOCSOAR />
       case 'compliance': return <SOCCompliance />
       case 'audit-log':  return <SOCAuditLog />
+      case 'phishing':   return <SOCPhishing />
       default: {
         const label = NAV.flatMap(g => g.items).find(i => i.id === id)?.label || id
         return <Placeholder label={label} />

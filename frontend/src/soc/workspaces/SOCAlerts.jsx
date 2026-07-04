@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { AlertTriangle, RefreshCw, CheckCircle, XCircle, Circle } from 'lucide-react'
 
 const SEVERITIES = ['All', 'Critical', 'High', 'Medium', 'Low']
-const STATUSES = ['All', 'Open', 'Acknowledged', 'Resolved']
+const STATUSES = ['All', 'Active', 'Open', 'Acknowledged', 'Resolved']
 
 const MOCK_ALERTS = [
   { id: 'al-001', severity: 'Critical', message: 'Brute-force login detected from external IP', source_ip: '185.220.101.45', type: 'Authentication', time: '2026-06-24T10:02:00Z', status: 'Open' },
@@ -44,7 +44,7 @@ export default function SOCAlerts() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [sevFilter, setSevFilter] = useState('All')
-  const [statusFilter, setStatusFilter] = useState('All')
+  const [statusFilter, setStatusFilter] = useState('Active')
 
   const fetchAlerts = useCallback(async () => {
     setError(null)
@@ -74,11 +74,12 @@ export default function SOCAlerts() {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
     try {
       const token = sessionStorage.getItem('caspmail_access_token')
-      await fetch(`/api/v4/soc/alerts/${id}`, {
+      const res = await fetch(`/api/v4/soc/alerts/${id}`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus.toLowerCase() }),
       })
+      if (!res.ok) throw new Error('Update failed')
     } catch {
       // Revert on failure
       fetchAlerts()
@@ -86,8 +87,12 @@ export default function SOCAlerts() {
   }
 
   const displayed = (alerts || []).filter(a => {
-    if (sevFilter !== 'All' && a.severity !== sevFilter) return false
-    if (statusFilter !== 'All' && a.status !== statusFilter) return false
+    if (sevFilter !== 'All' && a.severity?.toLowerCase() !== sevFilter.toLowerCase()) return false
+    if (statusFilter === 'Active') {
+      if (a.status?.toLowerCase() === 'resolved') return false
+    } else if (statusFilter !== 'All' && a.status?.toLowerCase() !== statusFilter.toLowerCase()) {
+      return false
+    }
     return true
   })
 

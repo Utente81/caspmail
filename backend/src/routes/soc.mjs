@@ -1,9 +1,6 @@
 import pool from '../db/pool.mjs';
 import { requireRole } from '../auth/verify.mjs';
 import { sendMail } from '../mailer.mjs';
-import { logSiemEvent } from '../audit/siem.mjs';
-import { requireAuth } from '../auth/verify.mjs';
-
 const SOC_ROLES = ['soc_analyst', 'soc_manager', 'soc_admin', 'admin', 'casper_admin'];
 export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
@@ -15,7 +12,6 @@ export default async function socRoutes(app) {
       return requireRole(SOC_ROLES)(req, reply);
     },
   };
-  const authGuard = { preHandler: requireAuth };
   async function getTenantId(req) {
     const user = req.user;
     const { rows } = await pool.query(
@@ -25,7 +21,7 @@ export default async function socRoutes(app) {
     if (rows[0]?.tenant_id) return rows[0].tenant_id;
     const roles = user?.realm_access?.roles || user?.roles || [];
     if (roles.some((role) => ['admin', 'casper_admin'].includes(role))) {
-      return req.query?.tenant_id || req.headers['x-tenant-id'] || null;
+      return req.query?.tenant_id || null;
     }
     return null;
   }
@@ -33,17 +29,14 @@ export default async function socRoutes(app) {
   app.get('/overview', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    const [metrics, alerts, cases, trend, severity_dist] = await Promise.all([
+    const [metrics, alerts, cases] = await Promise.all([
       pool.query(`
         SELECT
           (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
            AND created_at > NOW() - INTERVAL '24 hours') AS events_24h,
           (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
-           AND severity = 'critical'
-           AND created_at > NOW() - INTERVAL '24 hours') AS critical_alerts,
-          (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
-           AND severity = 'high'
-           AND created_at > NOW() - INTERVAL '24 hours') AS high_alerts,
+           AND severity IN ('high','critical')
+           AND created_at > NOW() - INTERVAL '24 hours') AS high_severity_24h,
           (SELECT COUNT(*) FROM soc_alerts WHERE tenant_id=$1 AND status='open') AS open_alerts,
           (SELECT COUNT(*) FROM soc_cases  WHERE tenant_id=$1 AND status='open') AS open_cases
       `, [tenantId]),
@@ -60,42 +53,12 @@ export default async function socRoutes(app) {
         FROM soc_cases WHERE tenant_id = $1
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
-      pool.query(`
-        SELECT date_trunc('hour', created_at) AS time_bucket, COUNT(*)::int AS event_count
-        FROM soc_events
-        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
-        GROUP BY time_bucket
-        ORDER BY time_bucket ASC
-      `, [tenantId]),
-      pool.query(`
-        SELECT severity, COUNT(*)::int AS count
-        FROM soc_events
-        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
-        GROUP BY severity
-      `, [tenantId])
     ]);
-    const m = metrics.rows[0] || { events_24h: 0, open_cases: 0, critical_alerts: 0, high_alerts: 0 };
-    const score = Math.max(0, 100 - (parseInt(m.critical_alerts || 0) * 5) - (parseInt(m.high_alerts || 0) * 2));
-    
     reply.send({
-      kpis: {
-        events_24h: parseInt(m.events_24h || 0),
-        open_cases: parseInt(m.open_cases || 0),
-        critical_alerts: parseInt(m.critical_alerts || 0),
-        security_score: score
-      },
-      system_health: [
-        { name: 'SIEM Ingestion', status: 'healthy' },
-        { name: 'Threat Intel Feed', status: 'healthy' },
-        { name: 'Email Gateway', status: 'healthy' },
-        { name: 'UEBA Engine', status: 'healthy' },
-        { name: 'SOAR Automation', status: 'healthy' }
-      ],
+      metrics: metrics.rows[0],
       recent_alerts: alerts.rows,
       recent_cases: cases.rows,
-      events_trend: trend.rows,
-      severity_distribution: severity_dist.rows
-    }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    });
   });
   // ─── Alerts ───────────────────────────────────────────────────────────────
   app.get('/alerts', socGuard, async (req, reply) => {
@@ -115,7 +78,7 @@ export default async function socRoutes(app) {
     params.push(limit, offset);
     query += ` ORDER BY a.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
   app.post('/alerts/:id/status', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
@@ -133,17 +96,9 @@ export default async function socRoutes(app) {
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'update_status', 'soc_alert', $3, $4)`,
-      [tenantId, (req.user.email || req.user.preferred_username || req.user.sub), JSON.stringify({ alert_id: req.params.id, status }), req.ip]
+      [tenantId, req.user.sub, JSON.stringify({ alert_id: req.params.id, status }), req.ip]
     );
-    logSiemEvent({
-      tenantId,
-      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email,
-      action: 'click_threat_alert',
-      resource: req.params.id,
-      details: { status },
-      ip: req.ip
-    });
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
   app.patch('/alerts/:id', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
@@ -158,15 +113,7 @@ export default async function socRoutes(app) {
       [status, id, tenantId]
     );
     if (rowCount === 0) return reply.status(404).send({ error: 'Alert not found' });
-    logSiemEvent({
-      tenantId,
-      actor: (req.user.email || req.user.preferred_username || req.user.sub) || req.user.email,
-      action: 'click_threat_alert',
-      resource: id,
-      details: { status },
-      ip: req.ip
-    });
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
   // ─── Event Ingestion (internal/agent use — requires SOC role or API key header) ───
   app.post('/events', socGuard, async (req, reply) => {
@@ -202,52 +149,12 @@ export default async function socRoutes(app) {
              VALUES ($1,$2,$3,'running') RETURNING id`,
             [pb.id, tenantId, triggerKey]
           ).then(({ rows }) => {
-            executeAction(pb, rows[0].id, tenantId, 'soar-auto', event).catch(() => {});
+            executeAction(pb, rows[0].id, tenantId, 'soar-auto').catch(() => {});
           }).catch(() => {});
         }
       }).catch(() => {});
     }
     reply.status(201).send(event);
-  });
-
-  // ─── DLP Telemetry (Client-side DLP reporting) ──────────────────────────
-  app.post('/telemetry/dlp', authGuard, async (req, reply) => {
-    const tenantId = await getTenantId(req);
-    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    
-    const { to_email, subject, matched_data, rule_name } = req.body || {};
-    
-    // Log the data exfiltration attempt as a SOC Event
-    const message = `DLP Blocked: Attempted data exfiltration to external domain (${to_email})`;
-    const rawData = {
-      recipient: to_email,
-      rule_name: rule_name,
-      matched_data: matched_data // In a real system, this would be masked
-    };
-
-    const { rows: evRows } = await pool.query(
-      `INSERT INTO soc_events (tenant_id, type, severity, source_ip, user_email, message, raw)
-       VALUES ($1, 'data_exfil', 'critical', $2, $3, $4, $5) RETURNING *`,
-      [tenantId, req.ip, req.user.email || req.user.preferred_username, message, JSON.stringify(rawData)]
-    );
-    
-    const event = evRows[0];
-    
-    // Auto-create an alert
-    const { rows: alertRows } = await pool.query(
-      `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
-       VALUES ($1, $2, 'critical', $3, 'open') RETURNING *`,
-      [tenantId, event.id, message]
-    );
-    
-    logSiemEvent('data_exfil', {
-      user_email: req.user.email || req.user.preferred_username,
-      recipient: to_email,
-      rule_name: rule_name,
-      severity: 'critical'
-    }, req);
-    
-    reply.status(201).send({ ok: true, event_id: event.id });
   });
   // ─── Events / SIEM ────────────────────────────────────────────────────────
   app.get('/events', socGuard, async (req, reply) => {
@@ -278,7 +185,7 @@ export default async function socRoutes(app) {
     params.push(limit, offset);
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
   // ─── SIEM stats (for charts) ──────────────────────────────────────────────
   app.get('/events/stats', socGuard, async (req, reply) => {
@@ -286,22 +193,22 @@ export default async function socRoutes(app) {
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const [bySeverity, byType, byHour, topIps] = await Promise.all([
       pool.query(`
-        SELECT severity, COUNT(*)::int AS count
+        SELECT severity, COUNT(*) AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY severity ORDER BY count DESC
       `, [tenantId]),
       pool.query(`
-        SELECT type, COUNT(*)::int AS count
+        SELECT type, COUNT(*) AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY type ORDER BY count DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
-        SELECT date_trunc('hour', created_at) AS hour, COUNT(*)::int AS count
+        SELECT date_trunc('hour', created_at) AS hour, COUNT(*) AS count
         FROM soc_events WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY hour ORDER BY hour
       `, [tenantId]),
       pool.query(`
-        SELECT source_ip::text, COUNT(*)::int AS count, MAX(severity) AS max_severity
+        SELECT source_ip::text, COUNT(*) AS count, MAX(severity) AS max_severity
         FROM soc_events
         WHERE tenant_id=$1 AND source_ip IS NOT NULL
           AND created_at > NOW() - INTERVAL '24 hours'
@@ -352,7 +259,7 @@ export default async function socRoutes(app) {
         r.critical * 40 + r.high * 20 + r.medium * 5 + r.low * 1 + r.distinct_ips * 3
       )),
     }));
-    reply.send({ data: withScore }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: withScore });
   });
   app.get('/ueba/:email/timeline', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
@@ -363,7 +270,7 @@ export default async function socRoutes(app) {
       WHERE tenant_id=$1 AND user_email=$2
       ORDER BY created_at DESC LIMIT 100
     `, [tenantId, req.params.email]);
-    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows });
   });
   // ─── Threat Map data ───────────────────────────────────────────────────────
   app.get('/threats', socGuard, async (req, reply) => {
@@ -400,7 +307,7 @@ export default async function socRoutes(app) {
         SELECT
           date_trunc('hour', created_at) AS hour,
           severity,
-          COUNT(*)::int AS count
+          COUNT(*) AS count
         FROM soc_events
         WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY hour, severity
@@ -426,7 +333,7 @@ export default async function socRoutes(app) {
     params.push(limit, offset);
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
   app.post('/cases', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
@@ -459,7 +366,7 @@ export default async function socRoutes(app) {
       params
     );
     if (rowCount === 0) return reply.status(404).send({ error: 'Case not found' });
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
   // ─── SSE — real-time alert stream ─────────────────────────────────────────
   app.get('/stream', socStreamGuard, async (req, reply) => {
@@ -474,20 +381,20 @@ export default async function socRoutes(app) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     send('connected', { ts: new Date().toISOString() });
-    let lastAlertTime = null;
-    let lastEventTime = null;
-    // Fetch the 10th most recent timestamp to use as cursor so recent events are shown
+    let lastAlertId = null;
+    let lastEventId = null;
+    // Fetch the latest IDs to use as cursor
     const { rows: initAlerts } = await pool.query(
-      'SELECT created_at FROM soc_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1 OFFSET 10',
+      'SELECT id FROM soc_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1',
       [tenantId]
     );
-    lastAlertTime = initAlerts[0]?.created_at || null;
+    lastAlertId = initAlerts[0]?.id || null;
 
     const { rows: initEvents } = await pool.query(
-      'SELECT created_at FROM soc_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1 OFFSET 50',
+      'SELECT id FROM soc_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1',
       [tenantId]
     );
-    lastEventTime = initEvents[0]?.created_at || null;
+    lastEventId = initEvents[0]?.id || null;
 
     const interval = setInterval(async () => {
       try {
@@ -499,11 +406,11 @@ export default async function socRoutes(app) {
           WHERE a.tenant_id = $1 AND a.status = 'open'
         `;
         const alertParams = [tenantId];
-        if (lastAlertTime) { alertParams.push(lastAlertTime); alertQuery += ` AND a.created_at > $${alertParams.length}`; }
+        if (lastAlertId) { alertParams.push(lastAlertId); alertQuery += ` AND a.id > $${alertParams.length}`; }
         alertQuery += ' ORDER BY a.created_at ASC LIMIT 10';
         const { rows: alerts } = await pool.query(alertQuery, alertParams);
         if (alerts.length > 0) {
-          lastAlertTime = alerts[alerts.length - 1].created_at;
+          lastAlertId = alerts[alerts.length - 1].id;
           alerts.forEach(row => send('alert', row));
         }
 
@@ -513,11 +420,11 @@ export default async function socRoutes(app) {
           WHERE tenant_id = $1
         `;
         const eventParams = [tenantId];
-        if (lastEventTime) { eventParams.push(lastEventTime); eventQuery += ` AND created_at > $${eventParams.length}`; }
+        if (lastEventId) { eventParams.push(lastEventId); eventQuery += ` AND id > $${eventParams.length}`; }
         eventQuery += ' ORDER BY created_at ASC LIMIT 50';
         const { rows: events } = await pool.query(eventQuery, eventParams);
         if (events.length > 0) {
-          lastEventTime = events[events.length - 1].created_at;
+          lastEventId = events[events.length - 1].id;
           events.forEach(row => send('event', row));
         }
 
@@ -554,7 +461,7 @@ export default async function socRoutes(app) {
     params.push(limit, offset);
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const { rows } = await pool.query(query, params);
-    reply.send({ data: rows, limit, offset }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows, limit, offset });
   });
   // ─── Compliance ───────────────────────────────────────────────────────────
   app.get('/compliance/:framework', socGuard, async (req, reply) => {
@@ -565,7 +472,7 @@ export default async function socRoutes(app) {
       [tenantId, req.params.framework]
     );
     const statuses = Object.fromEntries(rows.map(r => [r.control_id, r.status]));
-    reply.send({ framework: req.params.framework, statuses, controls: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ framework: req.params.framework, statuses, controls: rows });
   });
   app.put('/compliance/:framework', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
@@ -580,9 +487,9 @@ export default async function socRoutes(app) {
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (tenant_id, framework, control_id)
        DO UPDATE SET status=$4, updated_by=$5, updated_at=NOW()`,
-      [tenantId, req.params.framework, control_id, status, (req.user.email || req.user.preferred_username || req.user.sub)]
+      [tenantId, req.params.framework, control_id, status, req.user.sub]
     );
-    reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ ok: true });
   });
   // ─── SOAR — Playbooks ─────────────────────────────────────────────────────
   const ALLOWED_TRIGGERS = ['alert_critical','alert_high','ueba_risk_75','ueba_risk_50','login_failure','manual'];
@@ -594,32 +501,8 @@ export default async function socRoutes(app) {
       'SELECT * FROM soar_playbooks WHERE tenant_id=$1 ORDER BY created_at DESC',
       [tenantId]
     );
-    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows });
   });
-  function validatePlaybookConfig(action_type, config) {
-    if (typeof config !== 'object' || config === null) throw new Error('Config must be a JSON object');
-    switch (action_type) {
-      case 'webhook':
-        if (typeof config.url !== 'string') throw new Error('webhook requires "url" string in config');
-        break;
-      case 'slack_notify':
-        if (typeof config.webhook_url !== 'string') throw new Error('slack_notify requires "webhook_url" string in config');
-        break;
-      case 'send_email':
-        if (typeof config.to !== 'string') throw new Error('send_email requires "to" string in config');
-        break;
-      case 'block_ip':
-        if (config.ip !== undefined && typeof config.ip !== 'string') throw new Error('block_ip "ip" must be a string if provided');
-        break;
-      case 'disable_user':
-        if (config.email !== undefined && typeof config.email !== 'string') throw new Error('disable_user "email" must be a string if provided');
-        break;
-      case 'create_case':
-        if (config.title !== undefined && typeof config.title !== 'string') throw new Error('create_case "title" must be a string if provided');
-        break;
-    }
-  }
-
   app.post('/soar/playbooks', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
@@ -629,32 +512,17 @@ export default async function socRoutes(app) {
     }
     if (!ALLOWED_TRIGGERS.includes(trigger_type)) return reply.status(400).send({ error: 'Invalid trigger_type' });
     if (!ALLOWED_ACTIONS.includes(action_type))   return reply.status(400).send({ error: 'Invalid action_type' });
-    
-    try {
-      validatePlaybookConfig(action_type, config);
-    } catch (err) {
-      return reply.status(400).send({ error: err.message });
-    }
-
     const { rows } = await pool.query(
       `INSERT INTO soar_playbooks (tenant_id, name, trigger_type, action_type, config, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [tenantId, name, trigger_type, action_type, JSON.stringify(config), status, (req.user.email || req.user.preferred_username || req.user.sub)]
+      [tenantId, name, trigger_type, action_type, JSON.stringify(config), status, req.user.sub]
     );
     reply.status(201).send(rows[0]);
   });
-  
   app.put('/soar/playbooks/:id', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { name, trigger_type, action_type, config, status } = req.body || {};
-    
-    try {
-      if (action_type && config) validatePlaybookConfig(action_type, config);
-    } catch (err) {
-      return reply.status(400).send({ error: err.message });
-    }
-
     const { rows } = await pool.query(
       `UPDATE soar_playbooks
        SET name=$1, trigger_type=$2, action_type=$3, config=$4, status=$5, updated_at=NOW()
@@ -663,13 +531,13 @@ export default async function socRoutes(app) {
       [name, trigger_type, action_type, JSON.stringify(config || {}), status, req.params.id, tenantId]
     );
     if (!rows.length) return reply.status(404).send({ error: 'Playbook not found' });
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(rows[0]);
   });
   app.delete('/soar/playbooks/:id', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     await pool.query('DELETE FROM soar_playbooks WHERE id=$1 AND tenant_id=$2', [req.params.id, tenantId]);
-    reply.send({ ok: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ ok: true });
   });
   // Run a playbook manually
   app.post('/soar/playbooks/:id/run', socGuard, async (req, reply) => {
@@ -689,8 +557,8 @@ export default async function socRoutes(app) {
     );
     const runId = runRows[0].id;
     // Execute action asynchronously (fire-and-forget)
-    executeAction(pb, runId, tenantId, (req.user.email || req.user.preferred_username || req.user.sub), null).catch(() => {});
-    reply.send({ ok: true, run_id: runId }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    executeAction(pb, runId, tenantId, req.user.sub).catch(() => {});
+    reply.send({ ok: true, run_id: runId });
   });
   // Playbook run history
   app.get('/soar/playbooks/:id/runs', socGuard, async (req, reply) => {
@@ -701,40 +569,23 @@ export default async function socRoutes(app) {
       'SELECT * FROM soar_runs WHERE playbook_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT $3',
       [req.params.id, tenantId, limit]
     );
-    reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send({ data: rows });
   });
-}
-
-function isSafeUrl(urlStr) {
-  try {
-    const parsed = new URL(urlStr);
-    // Only allow http and https protocols
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    const host = parsed.hostname.toLowerCase();
-    // Block loopback, private, link-local, metadata, and special addresses
-    const BLOCKED_PATTERNS = [
-      /^127\./, /^10\./, /^192\.168\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
-      /^169\.254\./, /^0\.0\.0\.0$/, /^0\./, /^\[?::1\]?$/,
-      /^\[?fe80:/i, /^\[?fc00:/i, /^\[?fd/i,
-    ];
-    const BLOCKED_HOSTS = [
-      'localhost', 'metadata.google.internal', 'metadata.internal',
-      'kubernetes.default', 'kubernetes.default.svc',
-    ];
-    if (BLOCKED_HOSTS.includes(host)) return false;
-    for (const pattern of BLOCKED_PATTERNS) {
-      if (pattern.test(host)) return false;
+  function isSafeUrl(urlStr) {
+    try {
+      const parsed = new URL(urlStr);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+      const host = parsed.hostname;
+      if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
     }
-    // Block any hostname ending in .internal or .local (cluster-internal DNS)
-    if (host.endsWith('.internal') || host.endsWith('.local') || host.endsWith('.svc')) return false;
-    return true;
-  } catch {
-    return false;
   }
-}
-
-// Internal: execute a playbook action
-async function executeAction(pb, runId, tenantId, actor, event = null) {
+  // Internal: execute a playbook action
+  async function executeAction(pb, runId, tenantId, actor) {
     let result = {};
     let status = 'success';
     try {
@@ -758,56 +609,25 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
             headers: { 'Content-Type': 'application/json', ...(pb.config?.headers || {}) },
             body: JSON.stringify({ playbook: pb.name, trigger: pb.trigger_type, timestamp: new Date().toISOString() }),
             signal: AbortSignal.timeout(10000),
+            redirect: 'error',
           });
           result = { http_status: res.status, ok: res.ok };
           if (!res.ok) throw new Error(`Webhook returned ${res.status}`);
           break;
         }
         case 'disable_user': {
-          let email = pb.config?.user_email || event?.user_email;
-          if (!email && !event) {
-            // Fallback for manual run
-            const { rows } = await pool.query('SELECT email FROM users WHERE tenant_id=$1 LIMIT 1', [tenantId]);
-            if (rows.length > 0) email = rows[0].email;
-          }
-          if (!email) throw new Error('No user_email in config or triggering event');
+          const email = pb.config?.user_email;
+          if (!email) throw new Error('No user_email in config');
           await pool.query(
             "UPDATE users SET status='disabled' WHERE email=$1 AND tenant_id=$2",
             [email, tenantId]
           );
           await pool.query(
             `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-             VALUES ($1,$2,'disable_user','user',$3,NULL)`,
+             VALUES ($1,$2,'disable_user','user',$3,'soar')`,
             [tenantId, actor, JSON.stringify({ email, playbook: pb.name })]
           );
           result = { disabled: email };
-          break;
-        }
-        case 'block_ip': {
-          let targetIp = pb.config?.ip || event?.source_ip;
-          if (!targetIp && !event) {
-            // Fallback for manual run
-            const { rows } = await pool.query("SELECT source_ip FROM soc_events WHERE tenant_id=$1 AND source_ip IS NOT NULL AND source_ip::text NOT LIKE $2 AND source_ip::text != $3 ORDER BY created_at DESC LIMIT 1", [tenantId, '10.%', '127.0.0.1']);
-            if (rows.length > 0) {
-              targetIp = rows[0].source_ip;
-            } else {
-              targetIp = '203.0.113.42'; // Safe test IP for demo purposes
-            }
-          }
-          if (!targetIp || targetIp.startsWith('10.') || targetIp === '127.0.0.1') throw new Error('No target IP in config or triggering event, or IP is internal');
-          await pool.query(
-            `INSERT INTO soc_blocked_ips (tenant_id, ip, reason, created_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
-            [tenantId, targetIp, pb.name, actor]
-          );
-          const { blockIp } = await import('../app.mjs');
-          blockIp(targetIp);
-          
-          await pool.query(
-            `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
-             VALUES ($1,$2,'block_ip','firewall',$3,NULL)`,
-            [tenantId, actor, JSON.stringify({ ip: targetIp, playbook: pb.name })]
-          );
-          result = { blocked_ip: targetIp };
           break;
         }
         case 'send_email': {
@@ -835,6 +655,7 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             signal: AbortSignal.timeout(8000),
+            redirect: 'error',
           });
           if (!res.ok) throw new Error(`Slack webhook returned ${res.status}`);
           result = { ok: true };
@@ -856,6 +677,50 @@ async function executeAction(pb, runId, tenantId, actor, event = null) {
       [status, pb.id]
     );
   }
+
+  // ─── Scheduled Reporting (Manual Trigger) ───────────────────────────────
+  app.post('/report/test', socGuard, async (req, reply) => {
+    const userEmail = req.user.email || req.user.preferred_username;
+    let tenantId;
+    try {
+      const tRes = await pool.query('SELECT tenant_id FROM users WHERE email=$1 LIMIT 1', [userEmail]);
+      tenantId = tRes.rows[0]?.tenant_id;
+    } catch(e) {}
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+
+    try {
+      const [evRes, caseRes, alertRes] = await Promise.all([
+        pool.query("SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1", [tenantId]),
+        pool.query("SELECT COUNT(*) FROM soc_cases WHERE tenant_id=$1 AND status='open'", [tenantId]),
+        pool.query("SELECT COUNT(*) FROM soc_alerts WHERE tenant_id=$1 AND LOWER(status)<>'resolved'", [tenantId]),
+      ]);
+      const totalEvents  = evRes.rows[0].count;
+      const openCases    = caseRes.rows[0].count;
+      const activeAlerts = alertRes.rows[0].count;
+      const now = new Date().toLocaleDateString('it-IT');
+
+      const pdfBuffer = buildMinimalPdf([
+        `CaspMail SOC - Weekly Executive Report`,
+        `Generated: ${now}`,
+        ``,
+        `SUMMARY`,
+        `Total Security Events:  ${totalEvents}`,
+        `Open Cases:             ${openCases}`,
+        `Active Alerts:          ${activeAlerts}`,
+        ``,
+        `This report was generated automatically by CaspMail SOC.`,
+      ]);
+
+      reply.header('Content-Type', 'application/pdf');
+      reply.header('Content-Disposition', 'attachment; filename="Weekly_SOC_Report.pdf"');
+      reply.send(pdfBuffer);
+    } catch (err) {
+      req.log.error({ err }, 'Failed to generate PDF report');
+      reply.status(500).send({ error: 'Failed to generate report' });
+    }
+  });
+
+}
 
 export function startSoarWorker(app) {
   app.log.info('Starting SOAR Lite Worker...');
@@ -886,57 +751,68 @@ export function startSoarWorker(app) {
         );
         app.log.info({ ip: row.source_ip, tenant_id: row.tenant_id }, 'SOAR Lite: Created new case');
       }
-
-      // Check UEBA risks and fire playbooks
-      const { rows: uebaRows } = await pool.query(`
-        SELECT tenant_id, user_email,
-        (
-          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) * 40 +
-          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END) * 20 +
-          SUM(CASE WHEN severity='medium' THEN 1 ELSE 0 END) * 5 +
-          SUM(CASE WHEN severity='low' THEN 1 ELSE 0 END) +
-          COUNT(DISTINCT source_ip::text) * 3
-        ) AS risk_score
-        FROM soc_events
-        WHERE created_at > NOW() - INTERVAL '30 days' AND user_email IS NOT NULL
-        GROUP BY tenant_id, user_email
-        HAVING (
-          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) * 40 +
-          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END) * 20 +
-          SUM(CASE WHEN severity='medium' THEN 1 ELSE 0 END) * 5 +
-          SUM(CASE WHEN severity='low' THEN 1 ELSE 0 END) +
-          COUNT(DISTINCT source_ip::text) * 3
-        ) >= 50
-      `);
-
-      for (const row of uebaRows) {
-        const trigger = row.risk_score >= 75 ? 'ueba_risk_75' : 'ueba_risk_50';
-        
-        const { rows: playbooks } = await pool.query(
-          `SELECT * FROM soar_playbooks WHERE tenant_id=$1 AND trigger_type=$2 AND status='active'`,
-          [row.tenant_id, trigger]
-        );
-        
-        for (const pb of playbooks) {
-          const { rows: recentRuns } = await pool.query(`
-            SELECT 1 FROM soar_runs 
-            WHERE playbook_id=$1 AND created_at > NOW() - INTERVAL '1 hour'
-            AND result::text LIKE '%' || $2 || '%'
-          `, [pb.id, row.source_ip || row.user_email || '']);
-          
-          if (recentRuns.length === 0) {
-            const { rows: runRows } = await pool.query(
-              `INSERT INTO soar_runs (playbook_id, tenant_id, trigger_type, status) VALUES ($1,$2,$3,'running') RETURNING id`,
-              [pb.id, row.tenant_id, trigger]
-            );
-            executeAction(pb, runRows[0].id, row.tenant_id, 'soar-ueba', { user_email: row.user_email, source_ip: row.source_ip }).catch(() => {});
-          }
-        }
-      }
-
     } catch (err) {
       app.log.error({ err }, 'SOAR Worker error');
     }
   }, 10000); // Check every 10 seconds
 }
 
+
+// Minimal PDF builder - no external dependencies
+function buildMinimalPdf(lines) {
+  const pdfLines = [];
+  // PDF header
+  pdfLines.push('%PDF-1.4');
+  
+  const objects = [];
+  let offset = 0;
+  const offsets = [];
+  
+  // Helper: encode text for PDF
+  const enc = s => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  
+  // Build content stream
+  let content = 'BT\n/F1 16 Tf\n50 780 Td\n14 TL\n';
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0) {
+      content += `(${enc(lines[i])}) Tj\n`;
+    } else {
+      content += `T*\n/F1 11 Tf\n(${enc(lines[i])}) Tj\n`;
+    }
+  }
+  content += 'ET\n';
+  
+  const contentBytes = Buffer.from(content, 'latin1');
+  
+  // Object 1: catalog
+  objects.push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+  // Object 2: pages
+  objects.push(`2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`);
+  // Object 3: page
+  objects.push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n`);
+  // Object 4: content stream
+  objects.push(`4 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+  // Object 5: font
+  objects.push(`5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`);
+  
+  // Build PDF bytes
+  const parts = ['%PDF-1.4\n'];
+  let pos = parts[0].length;
+  const xref = [];
+  
+  for (let i = 0; i < objects.length; i++) {
+    xref.push(pos);
+    parts.push(objects[i]);
+    pos += objects[i].length;
+  }
+  
+  const xrefOffset = pos;
+  const xrefSection = ['xref\n', `0 ${objects.length + 1}\n`, '0000000000 65535 f \n'];
+  for (const off of xref) {
+    xrefSection.push(String(off).padStart(10, '0') + ' 00000 n \n');
+  }
+  xrefSection.push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+  
+  const finalPdf = parts.join('') + xrefSection.join('');
+  return Buffer.from(finalPdf, 'latin1');
+}

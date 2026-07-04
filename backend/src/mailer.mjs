@@ -29,7 +29,7 @@ const transport = buildTransport();
  * Returns { ok: true, messageId } or { ok: false, error }.
  * Never throws — SOAR actions must not crash on mail failure.
  */
-export async function sendMail({ to, subject, text, html, from }) {
+export async function sendMail({ to, subject, text, html, from, attachments }) {
   if (!transport) {
     return { ok: false, error: 'SMTP not configured (set SMTP_HOST env var)' };
   }
@@ -39,7 +39,7 @@ export async function sendMail({ to, subject, text, html, from }) {
     || `CaspMail SOC <noreply@${process.env.MAIL_DOMAIN || 'secure.internal'}>`;
 
   try {
-    const info = await transport.sendMail({ from: fromAddr, to, subject, text, html });
+    const info = await transport.sendMail({ from: fromAddr, to, subject, text, html, attachments });
     return { ok: true, messageId: info.messageId };
   } catch (err) {
     return { ok: false, error: err.message };

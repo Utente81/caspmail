@@ -36,7 +36,7 @@ spec:
         - name: DB_NAME
           value: caspermail
         - name: DATABASE_SSL
-          value: "true"
+          value: "false"
         - name: KEYCLOAK_ISSUER
           value: https://auth.secure.internal/realms/caspermail
         - name: KEYCLOAK_JWKS_URI
@@ -57,6 +57,9 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
+        - name: patch-soc
+          mountPath: /app/src/routes/soc.mjs
+          subPath: soc.mjs
         readinessProbe:
           httpGet:
             path: /health
@@ -69,6 +72,9 @@ spec:
       - name: secrets
         secret:
           secretName: casper-secrets
+      - name: patch-soc
+        configMap:
+          name: backend-patch-soc
 ---
 apiVersion: v1
 kind: Service

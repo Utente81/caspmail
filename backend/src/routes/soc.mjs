@@ -4,6 +4,28 @@ import { sendMail } from '../mailer.mjs';
 const SOC_ROLES = ['soc_analyst', 'soc_manager', 'soc_admin', 'admin', 'casper_admin'];
 export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
+
+function zeroTrustGuardHook(req, reply, done) {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0].strip() || req.ip || req.socket.remoteAddress || '';
+  const isVPN = /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) || ip === '127.0.0.1' || ip === '::1';
+  
+  const now = new Date();
+  const day = now.getUTCDay();
+  const hour = now.getUTCHours() + 2;
+  const isWorkingHours = (day >= 1 && day <= 5) && (hour >= 8 && hour < 18);
+  
+  const acr = req.user?.acr;
+  const hasMFA = (acr === '2' || acr === 'loa2' || (req.user?.amr && req.user.amr.includes('mfa')));
+  
+  if (!isVPN && !isWorkingHours) {
+    if (!hasMFA) {
+      return reply.status(403).send({ error: 'Zero Trust Policy: Access denied. Please connect to VPN, operate during working hours, or authenticate with MFA.' });
+    }
+  }
+  done();
+}
+const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook] };
+
   const socStreamGuard = {
     preHandler: async (req, reply) => {
       if (!req.headers.authorization && req.query?.token) {
@@ -540,7 +562,7 @@ export default async function socRoutes(app) {
     reply.send({ ok: true });
   });
   // Run a playbook manually
-  app.post('/soar/playbooks/:id/run', socGuard, async (req, reply) => {
+  app.post('/soar/playbooks/:id/run', zeroTrustGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { rows: pbs } = await pool.query(
@@ -679,7 +701,7 @@ export default async function socRoutes(app) {
   }
 
   // ─── Scheduled Reporting (Manual Trigger) ───────────────────────────────
-  app.post('/report/test', socGuard, async (req, reply) => {
+  app.post('/report/test', zeroTrustGuard, async (req, reply) => {
     const userEmail = req.user.email || req.user.preferred_username;
     let tenantId;
     try {

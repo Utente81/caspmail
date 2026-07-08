@@ -143,6 +143,42 @@ export default async function mailRoutes(app) {
     }
   });
 
+  // ─── Policy Acknowledgments (ISO 27001) ───────────────────────────────────
+
+  app.get('/api/me/policies', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    // Fetch active policies that the user hasn't acknowledged yet
+    const { rows } = await pool.query(`
+      SELECT p.id, p.title, p.content, p.version
+      FROM security_policies p
+      WHERE p.tenant_id = $1 AND p.is_active = TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM policy_acknowledgments a
+          WHERE a.policy_id = p.id AND a.user_email = $2
+        )
+    `, [user.tenant_id, user.email]);
+
+    reply.send({ pending_policies: rows });
+  });
+
+  app.post('/api/me/policies/:id/acknowledge', authGuard, async (req, reply) => {
+    const user = await getUser(req.user);
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip;
+
+    const { rows } = await pool.query(`
+      INSERT INTO policy_acknowledgments (id, tenant_id, policy_id, user_email, ip_address)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (policy_id, user_email) DO NOTHING
+      RETURNING *
+    `, [uuidv4(), user.tenant_id, req.params.id, user.email, ip]);
+
+    reply.send({ success: true });
+  });
+
   // ─── Messages (Inbox) ─────────────────────────────────────────────────────
 
   app.get('/api/e2ee/messages', authGuard, async (req, reply) => {

@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, Plus, Send, RefreshCw, BarChart2, Mail, Users, Trash2 } from 'lucide-react';
+import { ShieldAlert, Plus, Send, RefreshCw, BarChart2, Mail, Users, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { authFetch } from '../../auth/tokenRefresh.js';
-import { encryptMessage } from '../../mail/crypto.js';
+import { encryptMessage, importPublicKeyPem } from '../../mail/crypto.js';
 
 export default function SOCPhishing() {
   const [campaigns, setCampaigns] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [expandedCampaign, setExpandedCampaign] = useState(null);
+  const [campaignTargets, setCampaignTargets] = useState({});
+  const [loadingTargets, setLoadingTargets] = useState(false);
   
   // Form state
   const [name, setName] = useState('');
   const [senderEmail, setSenderEmail] = useState('it-support@acme.com');
   const [subject, setSubject] = useState('ACTION REQUIRED: Reset your password');
-  const [body, setBody] = useState('<p>Please click <a href="https://api.caspmail.local/api/v4/soc/phishing/track/click/{TARGET_ID}">here</a> to reset your password immediately.</p><img src="https://api.caspmail.local/api/v4/soc/phishing/track/open/{TARGET_ID}" width="1" height="1" />');
+  const [body, setBody] = useState('<p>Please click <a href="https://secure.internal/api/soc/simulations/track/click/{TARGET_ID}">here</a> to reset your password immediately.</p><img src="https://secure.internal/api/soc/simulations/track/open/{TARGET_ID}" width="1" height="1" />');
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,7 +28,7 @@ export default function SOCPhishing() {
   async function loadCampaigns() {
     setLoading(true);
     try {
-      const res = await authFetch('/api/v4/soc/phishing/campaigns');
+      const res = await authFetch('/api/v4/soc/simulations/campaigns');
       if (res.ok) setCampaigns(await res.json());
     } catch (e) {
       console.error(e);
@@ -35,12 +38,68 @@ export default function SOCPhishing() {
 
   async function loadUsers() {
     try {
-      // Assuming there's a way to get users in the tenant, or we just type them manually
-      // Since we might not have a generic users API exposed for the SOC, we'll allow manual entry
+      const res = await authFetch('/api/v4/soc/users');
+      if (res.ok) {
+        const json = await res.json();
+        setUsers(json.data || []);
+      }
     } catch (e) {
       console.error(e);
     }
   }
+
+  const handleDeleteCampaign = async (id) => {
+    if (!confirm('Are you sure you want to delete this campaign?')) return;
+    try {
+      const res = await authFetch(`/api/v4/soc/simulations/campaigns/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        loadCampaigns();
+      } else {
+        alert('Failed to delete campaign');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleTarget = (email) => {
+    if (selectedTargets.includes(email)) {
+      setSelectedTargets(selectedTargets.filter(x => x !== email));
+    } else {
+      setSelectedTargets([...selectedTargets, email]);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedTargets.length === users.length) {
+      setSelectedTargets([]);
+    } else {
+      setSelectedTargets(users.map(u => u.email));
+    }
+  };
+
+  const toggleDetails = async (id) => {
+    if (expandedCampaign === id) {
+      setExpandedCampaign(null);
+      return;
+    }
+    setExpandedCampaign(id);
+    if (!campaignTargets[id]) {
+      setLoadingTargets(true);
+      try {
+        const res = await authFetch(`/api/v4/soc/simulations/campaigns/${id}/targets`);
+        if (res.ok) {
+          const json = await res.json();
+          setCampaignTargets(prev => ({ ...prev, [id]: json.data }));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      setLoadingTargets(false);
+    }
+  };
 
   // To do true E2EE, the frontend would normally fetch public keys and encrypt here.
   // For the sake of the phishing simulator, if we don't have an endpoint to fetch all public keys easily,
@@ -61,11 +120,13 @@ export default function SOCPhishing() {
       
       for (const email of selectedTargets) {
         // Fetch public key
-        const keyRes = await authFetch(`/api/v4/mail/keys/${encodeURIComponent(email)}`);
+        const keyRes = await authFetch(`/api/e2ee/keys/${encodeURIComponent(email)}`);
         let pubKeyStr = null;
         if (keyRes.ok) {
-          const keyData = await keyRes.json();
-          pubKeyStr = keyData.public_key;
+          const resJson = await keyRes.json();
+          if (resJson.data && resJson.data.length > 0) {
+            pubKeyStr = resJson.data[0].public_key;
+          }
         }
         
         if (!pubKeyStr) {
@@ -86,7 +147,8 @@ export default function SOCPhishing() {
         const payloadStr = JSON.stringify({ text: body.replace(/\{TARGET_ID\}/g, targetId) }); 
         
         try {
-          const enc = await encryptMessage(pubKeyStr, subject, payloadStr);
+          const recipientPublicKey = await importPublicKeyPem(pubKeyStr);
+          const enc = await encryptMessage(recipientPublicKey, subject, payloadStr);
           targetsPayload.push({
             id: targetId,
             user_email: email,
@@ -111,7 +173,7 @@ export default function SOCPhishing() {
         targets: targetsPayload
       };
 
-      const res = await authFetch('/api/v4/soc/phishing/campaigns', {
+      const res = await authFetch('/api/v4/soc/simulations/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -132,12 +194,7 @@ export default function SOCPhishing() {
     setSubmitting(false);
   }
 
-  const handleAddTarget = () => {
-    const email = prompt('Enter target email:');
-    if (email && !selectedTargets.includes(email)) {
-      setSelectedTargets([...selectedTargets, email]);
-    }
-  };
+
 
   return (
     <div className="soc-workspace soc-fade-in">
@@ -172,15 +229,25 @@ export default function SOCPhishing() {
               <textarea value={body} onChange={e => setBody(e.target.value)} required rows={4} style={{ width: '100%', padding: '8px', background: '#0f1929', border: '1px solid #1e293b', color: '#fff', borderRadius: '4px', fontFamily: 'monospace' }} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '5px' }}>Targets ({selectedTargets.length})</label>
-              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                {selectedTargets.map(t => (
-                  <span key={t} style={{ background: '#1e293b', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    {t} <Trash2 size={12} style={{ cursor: 'pointer', color: '#ef4444' }} onClick={() => setSelectedTargets(selectedTargets.filter(x => x !== t))} />
-                  </span>
-                ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8' }}>Targets ({selectedTargets.length} / {users.length})</label>
+                <button type="button" className="soc-btn soc-btn-ghost" onClick={handleSelectAll} style={{ padding: '2px 8px', fontSize: '11px' }}>
+                  {selectedTargets.length > 0 && selectedTargets.length === users.length ? 'Deselect All' : 'Select All'}
+                </button>
               </div>
-              <button type="button" className="soc-btn soc-btn-ghost" onClick={handleAddTarget}><Plus size={14} /> Add Target</button>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', maxHeight: '150px', overflowY: 'auto', background: '#0f1929', padding: '10px', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                {users.map(u => (
+                  <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedTargets.includes(u.email)} 
+                      onChange={() => handleToggleTarget(u.email)} 
+                    />
+                    {u.name || u.email}
+                  </label>
+                ))}
+                {users.length === 0 && <span style={{ color: '#64748b', fontSize: '12px' }}>No users found in this tenant.</span>}
+              </div>
             </div>
             <button type="submit" className="soc-btn soc-btn-primary" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
               {submitting ? 'Launching...' : <><Send size={14} /> Launch Campaign</>}
@@ -208,8 +275,16 @@ export default function SOCPhishing() {
                 <div style={{ fontSize: '12px', color: '#94a3b8' }}>Sent from: {c.sender_email}</div>
                 <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>Started: {new Date(c.created_at).toLocaleString()}</div>
               </div>
-              <div style={{ background: '#22c55e22', color: '#22c55e', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                {c.status.toUpperCase()}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ background: '#22c55e22', color: '#22c55e', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                  {c.status.toUpperCase()}
+                </div>
+                <button className="soc-btn soc-btn-ghost" style={{ padding: '4px 8px' }} onClick={() => toggleDetails(c.id)} title="View Details">
+                  {expandedCampaign === c.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                <button className="soc-btn soc-btn-ghost" style={{ color: '#ef4444', padding: '4px 8px' }} onClick={() => handleDeleteCampaign(c.id)} title="Delete Campaign">
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
             
@@ -236,6 +311,47 @@ export default function SOCPhishing() {
                 <div style={{ fontSize: '10px', color: '#475569' }}>{c.reported_count} / {c.total_targets}</div>
               </div>
             </div>
+            
+            {expandedCampaign === c.id && (
+              <div style={{ marginTop: '20px', borderTop: '1px solid #1e293b', paddingTop: '15px' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#94a3b8' }}>Target Details</h4>
+                {loadingTargets ? (
+                  <p style={{ fontSize: '12px', color: '#64748b' }}>Loading targets...</p>
+                ) : campaignTargets[c.id] && campaignTargets[c.id].length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '12px', textAlign: 'left', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ color: '#64748b', borderBottom: '1px solid #1e293b' }}>
+                          <th style={{ padding: '8px 4px' }}>Target Email</th>
+                          <th style={{ padding: '8px 4px' }}>Status</th>
+                          <th style={{ padding: '8px 4px' }}>Opened</th>
+                          <th style={{ padding: '8px 4px' }}>Clicked</th>
+                          <th style={{ padding: '8px 4px' }}>Reported</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {campaignTargets[c.id].map(t => (
+                          <tr key={t.user_email} style={{ borderBottom: '1px solid #0f1929' }}>
+                            <td style={{ padding: '8px 4px' }}>{t.user_email}</td>
+                            <td style={{ padding: '8px 4px' }}>
+                              {t.reported_at ? <span style={{ color: '#22c55e' }}>Reported</span> : 
+                               t.clicked_at ? <span style={{ color: '#ef4444' }}>Compromised</span> : 
+                               t.opened_at ? <span style={{ color: '#eab308' }}>Opened</span> : 
+                               <span style={{ color: '#64748b' }}>Sent</span>}
+                            </td>
+                            <td style={{ padding: '8px 4px', color: '#94a3b8' }}>{t.opened_at ? new Date(t.opened_at).toLocaleString() : '-'}</td>
+                            <td style={{ padding: '8px 4px', color: '#94a3b8' }}>{t.clicked_at ? new Date(t.clicked_at).toLocaleString() : '-'}</td>
+                            <td style={{ padding: '8px 4px', color: '#94a3b8' }}>{t.reported_at ? new Date(t.reported_at).toLocaleString() : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '12px', color: '#64748b' }}>No targets found for this campaign.</p>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

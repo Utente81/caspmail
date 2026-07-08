@@ -112,7 +112,7 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
   async function handleReportPhishing() {
     if (!window.confirm('Report this message as a phishing attempt to the SOC team?')) return;
     try {
-      const res = await fetch(`/api/v4/soc/phishing/report/${msg.id}`, {
+      const res = await fetch(`/api/v4/soc/simulations/report/${msg.id}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token')}` }
       });
@@ -149,7 +149,7 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
     try {
       const parsed = JSON.parse(decrypted.body)
       oldBody = parsed.text
-      attachments = parsed.attachments || []
+      attachments = parsed.attachments || [] || []
     } catch (e) {}
 
     const fwdBody = `\n\n--- Forwarded Message ---\nFrom: ${msg.from_email}\nDate: ${new Date(msg.created_at).toLocaleString()}\n\n${oldBody}`
@@ -221,9 +221,9 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
             
             try {
               const parsed = JSON.parse(decrypted.body)
-              if (parsed.text !== undefined && parsed.attachments) {
+              if (parsed.text !== undefined) {
                 bodyText = parsed.text
-                attachments = parsed.attachments
+                attachments = parsed.attachments || []
               }
             } catch (e) {
               // Non Ã¨ un JSON, fallback a testo semplice (email vecchie)
@@ -265,7 +265,7 @@ function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, fold
                     </div>
                   </div>
                 )}
-                <div className="mail-detail-body">{bodyText}</div>
+                <div className="mail-detail-body" dangerouslySetInnerHTML={{ __html: bodyText }} />
                 {attachments.length > 0 && (
                   <div className="mail-detail-attachments" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                     <h4 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>

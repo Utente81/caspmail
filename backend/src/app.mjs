@@ -104,6 +104,29 @@ app.addHook('onRequest', async (req, reply) => {
   }
 });
 
+import { v4 as uuidv4 } from 'uuid';
+// ITAM Autodiscovery Hook
+app.addHook('onResponse', (req, reply, done) => {
+  if (req.user && (req.user.email || req.user.preferred_username)) {
+    const email = req.user.email || req.user.preferred_username;
+    const ip = realIp(req);
+    const ua = req.headers['user-agent'] || 'Unknown';
+    // Fire and forget
+    pool.query('SELECT tenant_id FROM users WHERE email = $1', [email])
+      .then(({rows}) => {
+        if (rows.length > 0) {
+          pool.query(`
+            INSERT INTO assets (id, tenant_id, ip_address, device_type, last_seen)
+            VALUES ($1, $2, $3, $4, NOW())
+            ON CONFLICT (tenant_id, ip_address)
+            DO UPDATE SET last_seen = NOW(), device_type = $4
+          `, [uuidv4(), rows[0].tenant_id, ip, ua]).catch(()=>{});
+        }
+      }).catch(()=>{});
+  }
+  done();
+});
+
 // Global rate-limit (applied to all routes via plugin)
 await app.register(rateLimit, {
   max: 100,

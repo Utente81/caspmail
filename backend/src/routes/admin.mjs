@@ -155,6 +155,16 @@ async function resetKeycloakUserPassword({ email, password }) {
   return keycloakUser.id;
 }
 
+async function getTenantId(req) {
+  let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
+  if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
+    const email = req.user.email || req.user.preferred_username;
+    const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
+    if (rows.length > 0) tenantId = rows[0].tenant_id;
+  }
+  return tenantId;
+}
+
 export default async function adminRoutes(app) {
   const adminGuard = { preHandler: requireRole(ADMIN_ROLES) };
 
@@ -172,8 +182,7 @@ export default async function adminRoutes(app) {
     reply.send(rows[0]);
   });
 
-  // ─── Tenants ──────────────────────────────────────────────────────────────
-
+  // ─── Metrics & Retention ──────────────────────────────────────────────────
 
   app.get('/metrics', adminGuard, async (req, reply) => {
     const { rows } = await pool.query(`
@@ -194,6 +203,8 @@ export default async function adminRoutes(app) {
     `);
     reply.send({ purged_count: rowCount });
   });
+
+  // ─── Tenants ──────────────────────────────────────────────────────────────
 
   app.get('/tenants', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
@@ -545,7 +556,258 @@ export default async function adminRoutes(app) {
     reply.status(201).send(rows[0]);
   });
 
-  // ─── Audit Log ────────────────────────────────────────────────────────────
+  // ─── GRC: RoPA (Record of Processing Activities) ──────────────────────────
+
+  app.get('/ropa', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM ropa_records WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/ropa', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { process_name, data_categories, legal_basis, retention_period, data_subjects } = req.body;
+    
+    const { rows } = await pool.query(`
+      INSERT INTO ropa_records (id, tenant_id, process_name, data_categories, legal_basis, retention_period, data_subjects)
+      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+    `, [uuidv4(), tenantId, process_name, data_categories, legal_basis, retention_period, data_subjects]);
+    reply.status(201).send(rows[0]);
+  });
+
+  app.delete('/ropa/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    await pool.query('DELETE FROM ropa_records WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    reply.send({ success: true });
+  });
+
+  // ─── GRC: DSR (Data Subject Requests) ─────────────────────────────────────
+
+  app.get('/dsr', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM dsr_requests WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/dsr', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { user_email, request_type, details } = req.body;
+    
+    const { rows } = await pool.query(`
+      INSERT INTO dsr_requests (id, tenant_id, user_email, request_type, details)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [uuidv4(), tenantId, user_email, request_type, details]);
+    reply.status(201).send(rows[0]);
+  });
+
+  app.patch('/dsr/:id/status', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { status } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE dsr_requests SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *
+    `, [status, req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+
+    // If status is completed and type is erasure, delete all messages!
+    if (status === 'completed' && rows[0].request_type === 'erasure') {
+      await pool.query('DELETE FROM e2ee_messages WHERE (from_email = $1 OR to_email = $1) AND legal_hold = FALSE', [rows[0].user_email]);
+    }
+
+    reply.send(rows[0]);
+  });
+
+  // ─── GRC: Policies ────────────────────────────────────────────────────────
+
+  app.get('/policies', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM security_policies WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/policies', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { title, content, version } = req.body;
+    const { rows } = await pool.query(`
+      INSERT INTO security_policies (id, tenant_id, title, content, version)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [uuidv4(), tenantId, title, content, version]);
+    reply.status(201).send(rows[0]);
+  });
+
+  app.get('/policies/acknowledgments', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query(`
+      SELECT p.title, p.version, a.user_email, a.acknowledged_at, a.ip_address
+      FROM policy_acknowledgments a
+      JOIN security_policies p ON a.policy_id = p.id
+      WHERE a.tenant_id = $1
+      ORDER BY a.acknowledged_at DESC
+    `, [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  // 🛡️ GRC: Vendor Risk Management 🛡️
+
+  app.get('/vendors', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    
+    const { rows } = await pool.query(`
+      SELECT v.*, 
+             d.status as dpa_status, d.signed_at as dpa_signed_at, d.expires_at as dpa_expires_at,
+             a.status as assessment_status, a.score as assessment_score, a.completed_at as assessment_completed_at
+      FROM vendors v
+      LEFT JOIN vendor_dpas d ON d.vendor_id = v.id
+      LEFT JOIN vendor_assessments a ON a.vendor_id = v.id
+      WHERE v.tenant_id = $1
+      ORDER BY v.created_at DESC
+    `, [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/vendors', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    
+    const { name, contact_email, service_provided, risk_level } = req.body;
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: vendorRows } = await client.query(`
+        INSERT INTO vendors (tenant_id, name, contact_email, service_provided, risk_level)
+        VALUES ($1, $2, $3, $4, $5) RETURNING id
+      `, [tenantId, name, contact_email, service_provided, risk_level || 'medium']);
+      
+      const vendorId = vendorRows[0].id;
+      
+      await client.query(`INSERT INTO vendor_dpas (vendor_id) VALUES ($1)`, [vendorId]);
+      await client.query(`INSERT INTO vendor_assessments (vendor_id) VALUES ($1)`, [vendorId]);
+      
+      await client.query('COMMIT');
+      reply.status(201).send({ ok: true, id: vendorId });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      req.log.error(e);
+      reply.status(500).send({ error: 'Failed to create vendor' });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete('/vendors/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    
+    const { rowCount } = await pool.query('DELETE FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
+    reply.send({ ok: true });
+  });
+
+  app.post('/vendors/:id/dpa/sign', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    
+    const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
+    
+    await pool.query(`
+      UPDATE vendor_dpas 
+      SET status = 'valid', signed_at = NOW(), expires_at = NOW() + INTERVAL '1 year' 
+      WHERE vendor_id = $1
+    `, [req.params.id]);
+    
+    reply.send({ ok: true });
+  });
+
+  app.post('/vendors/:id/assess', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    
+    const { score } = req.body;
+    
+    const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
+    
+    await pool.query(`
+      UPDATE vendor_assessments 
+      SET status = 'completed', score = $2, completed_at = NOW() 
+      WHERE vendor_id = $1
+    `, [req.params.id, score || 100]);
+    
+    reply.send({ ok: true });
+  });
+
+  // ─── GRC: DPA Agreements ──────────────────────────────────────────────────
+  app.get('/dpas', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM dpa_agreements WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/dpas', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { vendor_name, title, expiry_date, document_url } = req.body;
+    const { rows } = await pool.query(`
+      INSERT INTO dpa_agreements (id, tenant_id, vendor_name, title, status, signed_at, expiry_date, document_url)
+      VALUES ($1, $2, $3, $4, 'active', NOW(), $5, $6) RETURNING *
+    `, [uuidv4(), tenantId, vendor_name, title, expiry_date, document_url]);
+    reply.status(201).send(rows[0]);
+  });
+
+  app.patch('/dpas/:id/status', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { status } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE dpa_agreements SET status = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *
+    `, [status, req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]);
+  });
+
+  // ─── GRC: Security Trainings ──────────────────────────────────────────────
+  app.get('/trainings', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM security_trainings WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/trainings', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { user_email, course_name, status, score } = req.body;
+    const { rows } = await pool.query(`
+      INSERT INTO security_trainings (id, tenant_id, user_email, course_name, status, score, completed_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+    `, [uuidv4(), tenantId, user_email, course_name, status, score, status === 'completed' ? new Date() : null]);
+    reply.status(201).send(rows[0]);
+  });
+
+  app.patch('/trainings/:id/status', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { status, score } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE security_trainings SET status = $1::varchar, score = COALESCE($2, score), completed_at = CASE WHEN $1::varchar = 'completed' THEN NOW() ELSE completed_at END
+      WHERE id = $3 AND tenant_id = $4 RETURNING *
+    `, [status, score, req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]);
+  });
+
+  // 🛡️ Audit Log 🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️────────────────────────────────────────────────────────────
 
   app.get('/audit', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '100', 10), 500);

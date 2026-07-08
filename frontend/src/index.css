@@ -1,0 +1,4 @@
+
+.is-editable .soc-panel { border: 2px dashed #3b82f6 !important; cursor: grab; opacity: 0.8; }
+.is-editable .soc-panel:active { cursor: grabbing; }
+

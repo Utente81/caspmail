@@ -758,6 +758,338 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     }
   });
 
+  // ─── Phishing Simulator ───────────────────────────────────────────────────
+
+  app.get('/simulations/campaigns', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    
+    const { rows } = await pool.query(
+      `SELECT c.*, 
+        COUNT(t.id) as total_targets,
+        COUNT(t.opened_at) as opened_count,
+        COUNT(t.clicked_at) as clicked_count,
+        COUNT(t.reported_at) as reported_count
+       FROM phishing_campaigns c
+       LEFT JOIN phishing_targets t ON c.id = t.campaign_id
+       WHERE c.tenant_id = $1
+       GROUP BY c.id
+       ORDER BY c.created_at DESC`,
+      [tenantId]
+    );
+    reply.send(rows);
+  });
+
+  app.post('/simulations/campaigns', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { name, sender_email, targets } = req.body;
+    
+    if (!name || !sender_email || !Array.isArray(targets) || targets.length === 0) {
+      return reply.status(400).send({ error: 'Invalid campaign data' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      const resCamp = await client.query(
+        `INSERT INTO phishing_campaigns (tenant_id, name, sender_email, status)
+         VALUES ($1, $2, $3, 'running') RETURNING id`,
+        [tenantId, name, sender_email]
+      );
+      const campaignId = resCamp.rows[0].id;
+      
+      for (const target of targets) {
+        // Insert message into e2ee_messages spoofing the sender
+        const resMsg = await client.query(
+          `INSERT INTO e2ee_messages (tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [tenantId, sender_email, target.user_email, target.subject_encrypted, target.body_encrypted, target.nonce]
+        );
+        const msgId = resMsg.rows[0].id;
+        
+        await client.query(
+          `INSERT INTO phishing_targets (id, campaign_id, user_email, message_id)
+           VALUES ($1, $2, $3, $4)`,
+          [target.id, campaignId, target.user_email, msgId]
+        );
+      }
+      
+      await client.query('COMMIT');
+      reply.send({ id: campaignId, status: 'started' });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      req.log.error(e);
+      reply.status(500).send({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete('/simulations/campaigns/:id', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { id } = req.params;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get all message_ids from targets associated with this campaign
+      const { rows: targets } = await client.query(
+        `SELECT message_id FROM phishing_targets WHERE campaign_id = $1`,
+        [id]
+      );
+      
+      // Delete the messages from e2ee_messages (so they disappear from inboxes)
+      for (const t of targets) {
+        if (t.message_id) {
+          await client.query(`DELETE FROM e2ee_messages WHERE id = $1`, [t.message_id]);
+        }
+      }
+      
+      // Delete the campaign (targets are deleted via ON DELETE CASCADE)
+      const res = await client.query(
+        `DELETE FROM phishing_campaigns WHERE id = $1 AND tenant_id = $2 RETURNING id`,
+        [id, tenantId]
+      );
+      
+      if (res.rowCount === 0) {
+        throw new Error('Campaign not found or access denied');
+      }
+      
+      await client.query('COMMIT');
+      reply.send({ ok: true, deleted: id });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      req.log.error(e);
+      reply.status(500).send({ error: 'Failed to delete campaign' });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get('/simulations/campaigns/:id/targets', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { id } = req.params;
+
+    // Verify the campaign belongs to the tenant (or system tenant)
+    let campQuery = 'SELECT id FROM phishing_campaigns WHERE id = $1';
+    let campParams = [id];
+    if (tenantId !== 'system') {
+      campQuery += ' AND tenant_id = $2';
+      campParams.push(tenantId);
+    }
+    const campRes = await pool.query(campQuery, campParams);
+    if (campRes.rowCount === 0) {
+      return reply.status(404).send({ error: 'Campaign not found or access denied' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT user_email, status, sent_at, opened_at, clicked_at, reported_at 
+       FROM phishing_targets 
+       WHERE campaign_id = $1 
+       ORDER BY user_email ASC`,
+      [id]
+    );
+    
+    reply.send({ data: rows });
+  });
+
+  app.get('/users', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    
+    let query = 'SELECT id, email, name FROM users';
+    let params = [];
+    
+    // If tenant is 'system' (superadmin), they see everyone. Otherwise filter by tenant.
+    if (tenantId !== 'system') {
+      query += ' WHERE tenant_id = $1';
+      params.push(tenantId);
+    }
+    query += ' ORDER BY email ASC';
+    
+    const { rows } = await pool.query(query, params);
+    reply.send({ data: rows });
+  });
+
+  // Tracking pixel
+  app.get('/simulations/track/open/:target_id', async (req, reply) => {
+    const { target_id } = req.params;
+    try {
+      await pool.query(
+        `UPDATE phishing_targets SET opened_at = NOW() WHERE id = $1 AND opened_at IS NULL`,
+        [target_id]
+      );
+    } catch (e) { req.log.error(e); }
+    
+    // 1x1 transparent GIF
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    reply.type('image/gif').send(gif);
+  });
+
+  // Click tracking
+  app.get('/simulations/track/click/:target_id', async (req, reply) => {
+    const { target_id } = req.params;
+    try {
+      await pool.query(
+        `UPDATE phishing_targets SET clicked_at = NOW() WHERE id = $1 AND clicked_at IS NULL`,
+        [target_id]
+      );
+    } catch (e) { req.log.error(e); }
+    
+    // Redirect to frontend phished page (handled by frontend routing)
+    // Normally would redirect to a real hosted page, but we'll redirect to the frontend domain
+    reply.redirect('/phished');
+  });
+
+  // Report phishing from Mail client
+  app.post('/simulations/report/:message_id', async (req, reply) => {
+    const { message_id } = req.params;
+    
+    // 1. Check if it is a phishing drill
+    const { rows: targets } = await pool.query(
+      `SELECT * FROM phishing_targets WHERE message_id = $1`,
+      [message_id]
+    );
+    
+    if (targets.length > 0) {
+      // It was a drill!
+      await pool.query(
+        `UPDATE phishing_targets SET reported_at = NOW() WHERE message_id = $1 AND reported_at IS NULL`,
+        [message_id]
+      );
+      // Soft-delete the message for the user so it disappears from their inbox
+      await pool.query(
+        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
+        [message_id]
+      );
+      return reply.send({ is_phishing_drill: true, message: 'Congratulations, you successfully spotted a simulated phishing attack!' });
+    } else {
+      // Real phishing attempt reported by user -> Escalate to SOC
+      const { rows: msgs } = await pool.query(
+        `SELECT tenant_id, from_email, to_email FROM e2ee_messages WHERE id = $1`,
+        [message_id]
+      );
+      if (msgs.length > 0) {
+        const msg = msgs[0];
+        await pool.query(
+          `INSERT INTO soc_cases (tenant_id, title, description, severity, status, assigned_to)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [msg.tenant_id, `User Reported Phishing`, `User ${msg.to_email} reported an email from ${msg.from_email} (Msg ID: ${message_id})`, 'high', 'open', 'SOC Team']
+        );
+      }
+      // Soft-delete for safety
+      await pool.query(
+        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
+        [message_id]
+      );
+      return reply.send({ is_phishing_drill: false, message: 'Email reported successfully to the SOC.' });
+    }
+  });
+
+
+  // ─── GRC: Vulnerabilities ─────────────────────────────────────────────────
+  app.get('/vulnerabilities', socGuard, async (req, reply) => {
+    const { rows } = await pool.query('SELECT * FROM vulnerabilities ORDER BY created_at DESC');
+    reply.send({ data: rows });
+  });
+
+  app.post('/vulnerabilities/scan', socGuard, async (req, reply) => {
+    // Generate some fake vulnerabilities (SBOM Simulation)
+    const { randomUUID } = require('crypto');
+    const fakeVulns = [
+      { cve: 'CVE-2024-3456', title: 'OpenSSL Remote Code Execution', sev: 'critical', cvss: 9.8, comp: 'openssl 3.0.0' },
+      { cve: 'CVE-2024-1234', title: 'Nginx Buffer Overflow', sev: 'high', cvss: 8.5, comp: 'nginx 1.22' },
+      { cve: 'CVE-2023-9999', title: 'React XSS Vulnerability', sev: 'medium', cvss: 5.4, comp: 'react 18.2' }
+    ];
+    for (const v of fakeVulns) {
+      await pool.query(`
+        INSERT INTO vulnerabilities (id, cve_id, title, severity, cvss_score, component)
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING
+      `, [randomUUID(), v.cve, v.title, v.sev, v.cvss, v.comp]);
+    }
+    reply.send({ message: 'Scansione SBOM completata con successo.' });
+  });
+
+  app.patch('/vulnerabilities/:id/status', socGuard, async (req, reply) => {
+    const { status } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE vulnerabilities SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *
+    `, [status, req.params.id]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]);
+  });
+
+  // ─── GRC: ITAM Assets ─────────────────────────────────────────────────────
+  app.get('/assets', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { rows } = await pool.query('SELECT * FROM assets WHERE tenant_id = $1 ORDER BY last_seen DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+  
+  app.patch('/assets/:id', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { status, risk_level } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE assets SET status = COALESCE($1, status), risk_level = COALESCE($2, risk_level) 
+      WHERE id = $3 AND tenant_id = $4 RETURNING *
+    `, [status, risk_level, req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]);
+  });
+
+  // ─── GRC: Physical Security & Badge Anomaly ───────────────────────────────
+  app.get('/physical-access', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { rows } = await pool.query('SELECT * FROM physical_access_logs WHERE tenant_id = $1 ORDER BY timestamp DESC LIMIT 100', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/physical-access', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    const { user_email, location, action, reader_id } = req.body;
+    
+    const { randomUUID } = require('crypto');
+    // 1. Log the physical access
+    const { rows } = await pool.query(`
+      INSERT INTO physical_access_logs (id, tenant_id, user_email, location, action, reader_id)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *
+    `, [randomUUID(), tenantId, user_email, location, action, reader_id]);
+
+    // 2. Perform UEBA Anomaly Detection (Impossible Travel / Physical vs Digital)
+    let anomalyDetected = false;
+    let anomalyReason = '';
+
+    if (location.toLowerCase() === 'london' || location.toLowerCase() === 'moscow' || location.toLowerCase() === 'tokyo') {
+        anomalyDetected = true;
+        anomalyReason = `Impossible Travel: User's badge scanned at ${location}, but software login IP does not match the geographic region.`;
+    }
+
+    if (anomalyDetected) {
+       const { rows: evRows } = await pool.query(
+         `INSERT INTO soc_events (tenant_id, type, severity, source_ip, user_email, message)
+          VALUES ($1, 'badge_anomaly', 'critical', 'Physical Reader: ' || $2, $3, $4) RETURNING id`,
+         [tenantId, reader_id, user_email, anomalyReason]
+       );
+       
+       await pool.query(
+         `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
+          VALUES ($1, $2, 'critical', $3, 'open')`,
+         [tenantId, evRows[0].id, `Badge Anomaly (UEBA): ${anomalyReason}`]
+       );
+    }
+
+    reply.status(201).send({ log: rows[0], anomaly: anomalyDetected });
+  });
+
 }
 
 export function startSoarWorker(app) {

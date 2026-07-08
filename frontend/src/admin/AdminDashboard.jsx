@@ -13,6 +13,9 @@ import {
   ShieldCheck,
   User,
   Bell,
+  FileText,
+  Database,
+  Lock
 } from 'lucide-react'
 import AdminOverview from './workspaces/AdminOverview'
 import AdminTenants from './workspaces/AdminTenants'
@@ -21,12 +24,29 @@ import AdminDomains from './workspaces/AdminDomains'
 import AdminPermissions from './workspaces/AdminPermissions'
 import AdminAudit from './workspaces/AdminAudit'
 import AdminAliases from './workspaces/AdminAliases'
+import AdminRoPA from './workspaces/AdminRoPA'
+import AdminDSR from './workspaces/AdminDSR'
+import AdminPolicies from './workspaces/AdminPolicies'
+import AdminVendors from './workspaces/AdminVendors'
+import AdminDPA from './workspaces/AdminDPA'
+import AdminAwareness from './workspaces/AdminAwareness'
 
 const NAV = [
   {
     group: 'Platform',
     items: [
       { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    ],
+  },
+  {
+    group: 'GRC & Compliance',
+    items: [
+      { id: 'ropa', label: 'Processing Activities', icon: Database },
+      { id: 'dsr', label: 'Data Subject Requests', icon: FileText },
+      { id: 'dpas', label: 'Contract Manager', icon: FileText },
+      { id: 'vendors', label: 'Vendor Risk', icon: Building2 },
+      { id: 'policies', label: 'Security Policies', icon: Lock },
+      { id: 'awareness', label: 'Security Training', icon: Users },
     ],
   },
   {
@@ -60,6 +80,12 @@ function Placeholder({ label }) {
 function renderWorkspace(active, setActive) {
   switch (active) {
     case 'overview': return <AdminOverview onNavigate={setActive} />
+    case 'ropa': return <AdminRoPA />
+    case 'dsr': return <AdminDSR />
+    case 'dpas': return <AdminDPA />
+    case 'vendors': return <AdminVendors />
+    case 'policies': return <AdminPolicies />
+    case 'awareness': return <AdminAwareness />
     case 'tenants': return <AdminTenants />
     case 'users': return <AdminUsers />
     case 'domains': return <AdminDomains />

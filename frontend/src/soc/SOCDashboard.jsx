@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   LayoutDashboard,
   Map,
+  MapPin,
   Bell,
   Database,
   Users,
@@ -17,6 +18,8 @@ import {
   Settings,
   Wifi,
   WifiOff,
+  Server,
+  Bug
 } from 'lucide-react'
 import SOCOverview from './workspaces/SOCOverview'
 import SOCAlerts from './workspaces/SOCAlerts'
@@ -28,6 +31,9 @@ import SOCCompliance from './workspaces/SOCCompliance'
 import SOCAuditLog from './workspaces/SOCAuditLog'
 import SOCSOAR from './workspaces/SOCSOAR'
 import SOCPhishing from './workspaces/SOCPhishing'
+import SOCITAM from './workspaces/SOCITAM'
+import SOCVulnerabilities from './workspaces/SOCVulnerabilities'
+import SOCPhysical from './workspaces/SOCPhysical'
 import { ensureFreshToken } from '../auth/tokenRefresh.js'
 
 const NAV = [
@@ -44,6 +50,7 @@ const NAV = [
       { id: 'alerts', label: 'Alerts', icon: Bell },
       { id: 'siem', label: 'SIEM', icon: Database },
       { id: 'ueba', label: 'UEBA', icon: Users },
+      { id: 'physical', label: 'Physical Security', icon: MapPin },
     ],
   },
   {
@@ -59,6 +66,8 @@ const NAV = [
       { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
       { id: 'audit-log', label: 'Audit Log', icon: ClipboardList },
       { id: 'phishing', label: 'Phishing Drill', icon: Mail },
+      { id: 'itam', label: 'ITAM (Assets)', icon: Server },
+      { id: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug },
     ],
   },
 ]
@@ -202,6 +211,9 @@ export default function SOCDashboard() {
       case 'compliance': return <SOCCompliance />
       case 'audit-log':  return <SOCAuditLog />
       case 'phishing':   return <SOCPhishing />
+      case 'itam':       return <SOCITAM />
+      case 'vulnerabilities': return <SOCVulnerabilities />
+      case 'physical':   return <SOCPhysical />
       default: {
         const label = NAV.flatMap(g => g.items).find(i => i.id === id)?.label || id
         return <Placeholder label={label} />

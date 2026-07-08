@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
+import { ShieldAlert, Loader2 } from 'lucide-react'
 import MailDashboard from './MailDashboard'
+import { fetchAuth } from '../utils/api'
 
 const STORAGE_KEY = 'caspmail_access_token'
 
@@ -36,9 +38,98 @@ function BootScreen({ error }) {
   )
 }
 
+function PolicyGate({ policies, onAcknowledged }) {
+  const [currentIdx, setCurrentIdx] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const policy = policies[currentIdx]
+
+  async function handleAcknowledge() {
+    setLoading(true)
+    try {
+      await fetchAuth(`/api/me/policies/${policy.id}/acknowledge`, { method: 'POST' })
+      if (currentIdx + 1 < policies.length) {
+        setCurrentIdx(currentIdx + 1)
+      } else {
+        onAcknowledged()
+      }
+    } catch (err) {
+      alert('Failed to acknowledge: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 99999,
+      background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'Inter, system-ui, sans-serif'
+    }}>
+      <div style={{
+        background: '#0f172a', border: '1px solid #1e293b',
+        borderRadius: 16, width: 600, maxWidth: '90%',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        display: 'flex', flexDirection: 'column',
+        maxHeight: '90vh'
+      }}>
+        <div style={{ padding: '24px 32px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', padding: 12, borderRadius: '50%' }}>
+            <ShieldAlert size={28} />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc' }}>Action Required</h2>
+            <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+              You must acknowledge this security policy before continuing (ISO 27001 Compliance).
+            </p>
+          </div>
+        </div>
+
+        <div style={{ padding: '32px', overflowY: 'auto', flex: 1 }}>
+          <h3 style={{ margin: '0 0 16px 0', color: '#e2e8f0', fontSize: '1.1rem' }}>
+            {policy.title} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'normal' }}>v{policy.version}</span>
+          </h3>
+          <div style={{
+            background: '#0b1121', border: '1px solid #1e293b', borderRadius: 8,
+            padding: 24, color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6,
+            whiteSpace: 'pre-wrap'
+          }}>
+            {policy.content}
+          </div>
+        </div>
+
+        <div style={{
+          padding: '20px 32px', borderTop: '1px solid #1e293b',
+          display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16,
+          background: '#0b1121', borderBottomLeftRadius: 16, borderBottomRightRadius: 16
+        }}>
+          <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            {currentIdx + 1} of {policies.length}
+          </span>
+          <button 
+            onClick={handleAcknowledge} 
+            disabled={loading}
+            style={{
+              background: '#3b82f6', color: '#fff', border: 'none',
+              padding: '10px 24px', borderRadius: 6, fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
+              display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem'
+            }}
+          >
+            {loading ? <Loader2 size={16} className="soc-spinner" /> : null}
+            I Acknowledge
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MailApp() {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(null)
+  const [policies, setPolicies] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -95,6 +186,16 @@ export default function MailApp() {
           return
         }
 
+        // Fetch pending policies
+        try {
+          const polRes = await fetchAuth('/api/me/policies')
+          if (polRes && polRes.pending_policies && polRes.pending_policies.length > 0) {
+            if (alive) setPolicies(polRes.pending_policies)
+          }
+        } catch(e) {
+          console.warn('Failed to fetch policies', e)
+        }
+
         if (alive) setReady(true)
       } catch (err) {
         console.error('[mail-auth]', err)
@@ -106,6 +207,18 @@ export default function MailApp() {
   }, [])
 
   if (!ready) return <BootScreen error={error} />
+
+  if (policies && policies.length > 0) {
+    return (
+      <>
+        <PolicyGate policies={policies} onAcknowledged={() => setPolicies([])} />
+        <div style={{ filter: 'blur(5px)', pointerEvents: 'none', height: '100vh', overflow: 'hidden' }}>
+          <MailDashboard />
+        </div>
+      </>
+    )
+  }
+
   return <MailDashboard />
 }
 

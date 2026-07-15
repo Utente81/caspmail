@@ -35,6 +35,7 @@ import SOCITAM from './workspaces/SOCITAM'
 import SOCVulnerabilities from './workspaces/SOCVulnerabilities'
 import SOCPhysical from './workspaces/SOCPhysical'
 import { ensureFreshToken } from '../auth/tokenRefresh.js'
+import { io } from 'socket.io-client'
 
 const NAV = [
   {
@@ -152,6 +153,16 @@ export default function SOCDashboard() {
             return updated
           })
           setNewAlertCount(n => n + 1)
+        } catch {}
+      })
+      es.addEventListener('soar:action_executed', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const toast = document.createElement('div');
+          toast.className = 'soc-toast-success';
+          toast.innerHTML = `<strong>SOAR Action:</strong> ${data.action} (${data.ip || ''}) <br>Triggered by: ${data.playbook}`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
         } catch {}
       })
       es.onerror = () => {

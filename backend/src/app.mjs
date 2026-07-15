@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import Redis from 'ioredis';
+import { Server } from 'socket.io';
 
 import { runMigrations } from './db/migrate.mjs';
 import pool from './db/pool.mjs';
@@ -50,7 +52,19 @@ const app = Fastify({
 // ─── Security Headers ────────────────────────────────────────────────────────
 
 await app.register(helmet, {
-  contentSecurityPolicy: false, // Managed by nginx
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "wss:", "https:"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
 });
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
@@ -58,6 +72,32 @@ await app.register(helmet, {
 await app.register(cors, {
   origin: (process.env.CORS_ORIGINS || 'https://secure.internal').split(','),
   credentials: true,
+});
+
+// ─── WebSockets ──────────────────────────────────────────────────────────────
+
+import http from 'http';
+const ioServer = http.createServer();
+const io = new Server(ioServer, {
+  cors: {
+    origin: (process.env.CORS_ORIGINS || 'https://secure.internal').split(','),
+    credentials: true,
+  }
+});
+
+ioServer.listen(3001, '0.0.0.0', () => {
+  console.log('Socket.io dedicated server listening on 0.0.0.0:3001');
+});
+
+app.io = io;
+
+io.on('connection', (socket) => {
+  app.log.info({ socketId: socket.id }, 'New WebSocket connection');
+  
+  // Very simple auth check can be added here or via middleware
+  socket.on('disconnect', () => {
+    app.log.info({ socketId: socket.id }, 'WebSocket disconnected');
+  });
 });
 
 // ─── Rate Limiting & Firewall (layered, enterprise-grade) ─────────────────
@@ -127,8 +167,23 @@ app.addHook('onResponse', (req, reply, done) => {
   done();
 });
 
+import { readFileSync } from 'node:fs';
+let redisPassword;
+try {
+  redisPassword = readFileSync('/run/secrets/redis_password', 'utf8').trim();
+} catch {
+  console.warn('No redis password found at /run/secrets/redis_password');
+}
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'casper-redis-master.caspermail.svc.cluster.local',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASSWORD || redisPassword
+});
+
 // Global rate-limit (applied to all routes via plugin)
 await app.register(rateLimit, {
+  redis,
   max: 100,
   timeWindow: '1 minute',
   keyGenerator: realIp,

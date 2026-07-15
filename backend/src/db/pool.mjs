@@ -1,28 +1,55 @@
 import pg from 'pg';
-import { readFileSync } from 'node:fs';
 
 const { Pool } = pg;
 
-function buildConnectionString() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
+const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
-  // Running inside Docker with secrets mounted at /run/secrets/
-  let password;
-  try {
-    password = readFileSync('/run/secrets/postgres_password', 'utf8').trim();
-  } catch {
-    throw new Error('DATABASE_URL env var or /run/secrets/postgres_password secret is required');
+let cachedPassword = null;
+let passwordExpiresAt = 0;
+
+async function fetchDynamicPassword() {
+  if (cachedPassword && Date.now() < passwordExpiresAt) {
+    return cachedPassword;
   }
 
-  const host = process.env.DB_HOST || 'postgres';
-  const port = process.env.DB_PORT || '5432';
-  const user = process.env.DB_USER || 'caspermail';
-  const db   = process.env.DB_NAME || 'caspermail';
-  return `postgresql://${user}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+  if (!VAULT_TOKEN) {
+    throw new Error('VAULT_TOKEN is missing. Cannot fetch dynamic DB credentials.');
+  }
+
+  try {
+    const res = await fetch(`${VAULT_ADDR}/v1/database/static-creds/backend-role`, {
+      headers: { 'X-Vault-Token': VAULT_TOKEN }
+    });
+    
+    if (!res.ok) {
+      throw new Error(`Vault returned ${res.status}: ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    cachedPassword = data.data.password;
+    // Cache for 5 minutes (Vault rotates every 15m)
+    passwordExpiresAt = Date.now() + (5 * 60 * 1000); 
+    
+    console.log('[pg pool] Successfully fetched dynamic password from Vault');
+    return cachedPassword;
+  } catch (error) {
+    console.error('[pg pool] Failed to fetch dynamic password:', error);
+    throw error;
+  }
 }
 
+const host = process.env.DB_HOST || 'postgres';
+const port = process.env.DB_PORT || '5432';
+const db   = process.env.DB_NAME || 'caspermail';
+const user = 'casper_backend';
+
 const pool = new Pool({
-  connectionString: buildConnectionString(),
+  host,
+  port,
+  database: db,
+  user,
+  password: fetchDynamicPassword,
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

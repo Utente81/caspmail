@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
+    "dompurify": "^3.1.5",
     "lucide-react": "^0.400.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -15,8 +16,17 @@
     "react-grid-layout": "^1.4.4",
     "react-simple-maps": "^3.0.0",
     "recharts": "^3.9.1",
+    "socket.io-client": "^4.8.3",
     "three": "^0.185.0",
     "three-globe": "^2.45.2",
+    "uuid": "^10.0.0",
+    "@opentelemetry/api": "^1.8.0",
+    "@opentelemetry/context-zone": "^1.24.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.52.0",
+    "@opentelemetry/instrumentation": "^0.52.0",
+    "@opentelemetry/instrumentation-document-load": "^0.39.0",
+    "@opentelemetry/instrumentation-fetch": "^0.52.0",
+    "@opentelemetry/sdk-trace-web": "^1.24.1",
     "zustand": "^4.5.4"
   },
   "devDependencies": {

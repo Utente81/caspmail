@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cnpg-app-secret
+  namespace: caspermail
+type: kubernetes.io/basic-auth
+stringData:
+  username: caspermail
+  # Injected via script
+  password: __POSTGRES_PASSWORD__
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: casper-cnpg
+  namespace: caspermail
+spec:
+  instances: 3
+  
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+
+  bootstrap:
+    initdb:
+      database: caspermail
+      owner: caspermail
+      secret:
+        name: cnpg-app-secret
+
+  storage:
+    size: 2Gi
+  
+  walStorage:
+    size: 1Gi
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://pg-backup/
+      endpointURL: http://minio.caspermail.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-creds
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-creds
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 1
+    retentionPolicy: "30d"
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: casper-cnpg-daily-backup
+  namespace: caspermail
+spec:
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: casper-cnpg

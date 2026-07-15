@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: casper-backend
-  namespace: caspermail
   labels:
     app: backend
+  name: casper-backend
+  namespace: caspermail
 spec:
   replicas: 2
   selector:
@@ -12,31 +12,31 @@ spec:
       app: backend
   template:
     metadata:
+      annotations:
+        prometheus.io/port: '9464'
+        prometheus.io/scrape: 'true'
       labels:
         app: backend
     spec:
       automountServiceAccountToken: false
       containers:
-      - name: backend
-        securityContext:
-          readOnlyRootFilesystem: true
-        image: caspermail-backend:latest
-        imagePullPolicy: Never
-        env:
+      - env:
         - name: NODE_ENV
           value: production
+        - name: NODE_OPTIONS
+          value: '--import ./src/instrumentation.mjs'
         - name: PORT
-          value: "3000"
+          value: '3000'
         - name: DB_HOST
           value: casper-pg-postgresql-primary
         - name: DB_PORT
-          value: "5432"
+          value: '5432'
         - name: DB_USER
           value: caspermail
         - name: DB_NAME
           value: caspermail
         - name: DATABASE_SSL
-          value: "false"
+          value: 'false'
         - name: KEYCLOAK_ISSUER
           value: https://auth.secure.internal/realms/caspermail
         - name: KEYCLOAK_JWKS_URI
@@ -47,34 +47,83 @@ spec:
           value: caspermail
         - name: KEYCLOAK_ADMIN_USER
           value: admin
+        - name: VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: casper-secrets
+              key: vault_token
         - name: CORS_ORIGINS
           value: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
+        image: caspermail-backend:latest
+        imagePullPolicy: Never
+        name: backend
         ports:
         - containerPort: 3000
-        volumeMounts:
-        - name: secrets
-          mountPath: /run/secrets
-          readOnly: true
-        - name: tmp
-          mountPath: /tmp
-        - name: patch-soc
-          mountPath: /app/src/routes/soc.mjs
-          subPath: soc.mjs
         readinessProbe:
           httpGet:
             path: /health
             port: 3000
           initialDelaySeconds: 10
           periodSeconds: 10
+        securityContext:
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /run/secrets
+          name: secrets
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /app/node_modules
+          name: telemetry-node-modules
+        - mountPath: /app/src/routes/soc.mjs
+          name: patch-soc
+          subPath: soc.mjs
+        - mountPath: /app/src/services/vault.mjs
+          name: patch-vault
+          subPath: vault.mjs
+        - mountPath: /app/src/app.mjs
+          name: patch-app
+          subPath: app.mjs
+        - mountPath: /app/src/db/pool.mjs
+          name: patch-pool
+          subPath: pool.mjs
+        - mountPath: /app/src/instrumentation.mjs
+          name: patch-instrumentation
+          subPath: instrumentation.mjs
+      initContainers:
+      - name: init-telemetry
+        image: caspermail-backend:latest
+        imagePullPolicy: Never
+        command:
+        - sh
+        - -c
+        - "cp -a /app/node_modules/. /telemetry_node_modules/ && npm install --prefix /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1 @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1 && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/"
+        volumeMounts:
+        - mountPath: /telemetry_node_modules
+          name: telemetry-node-modules
       volumes:
-      - name: tmp
-        emptyDir: {}
+      - emptyDir: {}
+        name: telemetry-node-modules
+      - emptyDir: {}
+        name: tmp
       - name: secrets
         secret:
           secretName: casper-secrets
-      - name: patch-soc
-        configMap:
+      - configMap:
           name: backend-patch-soc
+        name: patch-soc
+      - configMap:
+          name: backend-vault
+        name: patch-vault
+      - configMap:
+          name: backend-app
+        name: patch-app
+      - configMap:
+          name: backend-pool
+        name: patch-pool
+      - configMap:
+          name: backend-instrumentation
+        name: patch-instrumentation
 ---
 apiVersion: v1
 kind: Service
@@ -82,11 +131,11 @@ metadata:
   name: casper-backend
   namespace: caspermail
 spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
   selector:
     app: backend
-  ports:
-    - port: 3000
-      targetPort: 3000
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -94,16 +143,16 @@ metadata:
   name: casper-backend-hpa
   namespace: caspermail
 spec:
+  maxReplicas: 10
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 80
+        type: Utilization
+    type: Resource
+  minReplicas: 2
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: casper-backend
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 80

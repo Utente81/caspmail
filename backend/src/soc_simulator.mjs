@@ -1,48 +1,86 @@
 import pool from './db/pool.mjs';
 
-const TACTICS = ['Initial Access', 'Execution', 'Persistence', 'Privilege Escalation', 'Defense Evasion', 'Credential Access', 'Discovery', 'Lateral Movement', 'Collection', 'Command and Control', 'Exfiltration', 'Impact'];
-const TECHNIQUES = ['T1190', 'T1059', 'T1098', 'T1068', 'T1070', 'T1003', 'T1082', 'T1021', 'T1114', 'T1071', 'T1041', 'T1485'];
 const SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'];
 
 function getRandomIP() {
-  const regions = [
-    [114, 114], [1, 2], [14, 14], [27, 27], [42, 42], [58, 60], [101, 101], [112, 112], [183, 183], // China (ish)
-    [46, 46], [62, 62], [77, 77], [85, 85], [95, 95], [109, 109], [178, 178], [188, 188], [212, 213], // Russia
-    [104, 104], [142, 142], [13, 13], [52, 52], [192, 192], [198, 198], [23, 23], [71, 71], [98, 98], [199, 199], // USA
-    [177, 177], [187, 187], [200, 200], [189, 189], [191, 191], // Brazil
-    [41, 41], [102, 102], [197, 197], // Nigeria
-    [144, 144] // Germany
-  ];
-  const region = [177, 177];
-  const a = Math.floor(Math.random() * (region[1] - region[0] + 1)) + region[0];
+  const a = Math.floor(Math.random() * 256);
   const b = Math.floor(Math.random() * 256);
   const c = Math.floor(Math.random() * 256);
   const d = Math.floor(Math.random() * 256);
   return `${a}.${b}.${c}.${d}`;
 }
 
+const SCENARIOS = [
+  {
+    type: 'auth_bruteforce',
+    mitre_tactic: 'Credential Access',
+    mitre_technique: 'T1110',
+    messages: [
+      'Failed login attempt for admin@secure.internal',
+      'Multiple failed logins detected from single IP',
+      'Keycloak Brute Force Attack detected'
+    ],
+    base_severity: 'high'
+  },
+  {
+    type: 'vault_anomalous_access',
+    mitre_tactic: 'Credential Access',
+    mitre_technique: 'T1555',
+    messages: [
+      'Anomalous access to Vault KMS secrets',
+      'Unusual volume of master keys requested',
+      'Vault unseal attempt from unauthorized IP'
+    ],
+    base_severity: 'critical'
+  },
+  {
+    type: 'data_exfiltration',
+    mitre_tactic: 'Exfiltration',
+    mitre_technique: 'T1041',
+    messages: [
+      'Large outbound data transfer to suspicious IP',
+      'Anomalous volume of emails forwarded externally',
+      'Data Exfiltration via alternative protocol detected'
+    ],
+    base_severity: 'critical'
+  },
+  {
+    type: 'malicious_traffic',
+    mitre_tactic: 'Initial Access',
+    mitre_technique: 'T1190',
+    messages: [
+      'Exploit attempt against exposed web interface',
+      'Suspicious payload detected by WAF',
+      'SQL Injection attempt blocked'
+    ],
+    base_severity: 'medium'
+  }
+];
+
 export function startSimulator(app) {
-  app.log.info('Starting SOC Threat Simulator...');
+  app.log.info('Starting SOC Threat Simulator (Advanced Scenarios)...');
   
   setInterval(async () => {
     try {
-      const tenantId = 'system'; // Default tenant
+      const tenantId = 'system';
+      const scenario = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
       
-      const type = 'malicious_traffic';
-      const severity = SEVERITIES[Math.floor(Math.random() * SEVERITIES.length)];
+      const type = scenario.type;
+      const severity = Math.random() > 0.6 ? scenario.base_severity : SEVERITIES[Math.floor(Math.random() * SEVERITIES.length)];
       const source_ip = getRandomIP();
       
-      const mitre_tactic = TACTICS[Math.floor(Math.random() * TACTICS.length)];
-      const mitre_technique = TECHNIQUES[Math.floor(Math.random() * TECHNIQUES.length)];
+      const mitre_tactic = scenario.mitre_tactic;
+      const mitre_technique = scenario.mitre_technique;
       const ueba_score = Math.floor(Math.random() * 50) + (severity === 'critical' || severity === 'high' ? 50 : 0);
       
-      const message = `Detected anomalous activity matching ${mitre_tactic} (${mitre_technique})`;
+      const message = scenario.messages[Math.floor(Math.random() * scenario.messages.length)];
       
       const raw = {
         mitre_tactic,
         mitre_technique,
         ueba_score,
-        threat_intelligence: "Suspicious Node"
+        threat_intelligence: "Known Malicious Actor Profile",
+        scenario_type: type
       };
 
       const { rows: evRows } = await pool.query(
@@ -61,8 +99,18 @@ export function startSimulator(app) {
         );
       }
       
+      app.log.warn({
+        SIEM_EVENT: true,
+        type: type,
+        severity: severity,
+        source_ip: source_ip,
+        mitre_tactic: mitre_tactic,
+        mitre_technique: mitre_technique,
+        message: message
+      }, `[SIEM] Threat Simulator Event: ${message}`);
+      
     } catch (err) {
       app.log.error({ err }, 'SOC Simulator error');
     }
-  }, 3000); // Generate an event every 3 seconds
+  }, 4000);
 }

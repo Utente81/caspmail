@@ -71,7 +71,7 @@ data:
         "1": {
           "Name": "Primary (Read-Write)",
           "Group": "Servers",
-          "Host": "casper-pg-postgresql-primary",
+          "Host": "casper-cnpg-rw",
           "Port": 5432,
           "MaintenanceDB": "postgres",
           "Username": "caspermail",

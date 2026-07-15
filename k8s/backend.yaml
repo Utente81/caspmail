@@ -28,7 +28,7 @@ spec:
         - name: PORT
           value: '3000'
         - name: DB_HOST
-          value: casper-pg-postgresql-primary
+          value: casper-cnpg-rw
         - name: DB_PORT
           value: '5432'
         - name: DB_USER

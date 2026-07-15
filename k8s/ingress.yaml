@@ -7,7 +7,7 @@ metadata:
     kubernetes.io/ingress.class: traefik
     # Traefik specific annotations for routing
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.middlewares: caspermail-strip-api-prefix@kubernetescrd,caspermail-caspermail-security-headers@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: caspermail-caspermail-security-headers@kubernetescrd
 spec:
   rules:
   - host: secure.internal

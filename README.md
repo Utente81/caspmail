@@ -1,108 +1,71 @@
 # CasperMail Enterprise Suite 🛡️✉️
 
-CasperMail is a next-generation, highly secure enterprise communication and security operations suite. It combines an encrypted mail client with a real-time SOC (Security Operations Center) Threat Map, governed by robust Role-Based Access Control (RBAC) powered by Keycloak OIDC.
+CasperMail is a military-grade, next-generation enterprise communication and security operations suite. It merges an end-to-end encrypted mail client with a real-time SOC (Security Operations Center) Threat Map, governed by strict Role-Based Access Control (RBAC) and hardware-backed biometric authentication.
 
-![CasperMail Suite](https://img.shields.io/badge/Status-Active-success) ![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB?logo=react) ![Fastify](https://img.shields.io/badge/Backend-Fastify-000000?logo=fastify) ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?logo=postgresql) ![Keycloak](https://img.shields.io/badge/Auth-Keycloak-blue?logo=keycloak)
+![CasperMail Suite](https://img.shields.io/badge/Status-Active-success) ![Kubernetes](https://img.shields.io/badge/Platform-Kubernetes-326ce5?logo=kubernetes) ![Vault](https://img.shields.io/badge/Security-HashiCorp%20Vault-000000?logo=vault) ![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB?logo=react) ![Fastify](https://img.shields.io/badge/Backend-Fastify-000000?logo=fastify)
 
 ---
 
 ## 🌟 Key Features
 
-### 1. 📧 Secure Webmail & DLP
-- **End-to-End Encryption Readiness**: Secure PGP key management and encrypted message drafting.
-- **Client-Side Zero-Trust DLP Engine**: Automatically blocks exfiltration of sensitive data (Credit Cards, IBAN, SSN, API Keys) before encryption and logs telemetry to the SOC.
-- **Responsive Interface**: Modern, dark-themed UI built with Tailwind CSS.
-- **Real-time Notifications**: Native browser notifications for incoming messages.
+### 1. 🔐 Zero-Trust Identity & Biometrics
+- **WebAuthn / Passkey Native**: Passwordless, biometric-first login (Windows Hello, Touch ID, YubiKey) natively integrated via Keycloak.
+- **Enterprise SSO & RBAC**: Strict separation of duties. Super Admins, Tenant Admins, SOC Analysts, and End Users are logically isolated.
+- **Dynamic Vault Secrets**: Database and internal infrastructure passwords are automatically rotated by HashiCorp Vault. Zero standing privileges.
 
-### 2. 🌍 SOC Threat Map & SOAR
-- **WebGL 3D Globe**: Real-time visualization of inbound cyber attacks using `react-globe.gl`.
-- **Live Event Stream**: Event-Driven architecture using Server-Sent Events (SSE) to push threats instantly from the backend.
-- **SOAR Playbooks**: Automated incident response with **Anti-SSRF Protection** blocking internal network attacks.
-- **MITRE ATT&CK & UEBA**: Advanced telemetry mapping and User Entity Behavior Analytics scoring for intelligent threat clustering.
+### 2. 🌍 Advanced SOC & Threat Intelligence
+- **Real-Time 3D Threat Map**: WebGL-powered 3D globe visualizing inbound cyber attacks via Server-Sent Events (SSE).
+- **SIEM Export (Splunk / QRadar)**: Asynchronous Webhook-based integration to forward High/Critical severity events to enterprise SIEMs (JSON/CEF format).
+- **Anti-SSRF SOAR Engine**: Playbooks feature autonomous incident response with built-in network boundary protections.
 
-### 3. 🔐 Enterprise Authentication (Identity Provider)
-- **Keycloak OIDC Integration**: Fully standard OpenID Connect PKCE flow.
-- **Single Sign-On (SSO) & Single Sign-Out**: Seamlessly switch between Mail, SOC, and Admin portals without re-authenticating. Clean session termination.
-- **Role-Based Access Control (RBAC)**: Strict separation of duties (e.g., SOC Analysts cannot read user emails; Standard users cannot view the threat map).
+### 3. 📧 Secure Webmail & Client-Side DLP
+- **End-to-End Encryption**: Secure message drafting with robust client-side isolation.
+- **Data Loss Prevention (DLP)**: Prevents exfiltration of PII (Credit Cards, IBANs, SSNs) directly in the browser before data reaches the network layer, generating instant SOC telemetry.
 
-### 4. ⚙️ Admin & Compliance Console
-- **SaaS Multi-Tenancy**: Native logical segregation. Each tenant's data is isolated. Tenant Administrators can only manage their own department/company, while Super Admins (`casper_admin`) maintain global visibility.
-- **Centralized Management**: Manage domains, tenants, users, and aliases with strict Cross-Tenant data isolation.
-- **Immutable Audit Trails**: High-performance, cryptographically secure audit logs tracing every action to a verified Keycloak identity.
-- **Legal Hold & GDPR Retention**: Enforce legal holds to prevent message destruction, or execute bulk GDPR purges for non-held data.
+### 4. ⚙️ Cloud-Native & High Availability
+- **CloudNativePG PostgreSQL**: Database high-availability clustering, continuous archiving, and disaster recovery via MinIO.
+- **GitOps Ready**: Fully automated, declarative deployments powered by ArgoCD.
+- **PLG Observability Stack**: Real-time log aggregation and monitoring via Prometheus, Loki, Promtail, and Grafana.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture Overview
 
-The application follows a modern decoupled architecture:
+The system is deployed on Kubernetes (K8s) using a microservices pattern:
 
-*   **Frontend (SPA)**: React 18 bundled with Vite. Contains 4 separate entry points (Login, Admin, Mail, SOC) to keep bundle sizes optimized.
-*   **Backend (API)**: Fastify (Node.js) providing REST endpoints and SSE streams.
-*   **Database**: PostgreSQL for persistent storage of users, emails, and SOC logs.
-*   **Identity**: Keycloak handles all users, roles, and issues JWT tokens.
-*   **Reverse Proxy**: NGINX handles SSL termination, serves static frontend files, and proxies API requests to the Fastify backend.
+- **Frontend**: React 18 (Vite, TailwindCSS).
+- **Backend API**: Fastify (Node.js).
+- **Identity Provider**: Keycloak 24+ (OIDC PKCE).
+- **KMS**: HashiCorp Vault (raft storage, HA mode).
+- **Database**: PostgreSQL (CloudNativePG Operator).
+- **Ingress**: Traefik (Strict CSP headers, TLS termination).
 
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-*   Docker & Docker Compose
-*   Node.js 18+ (for local development)
-
-### Installation & Deployment (Production / Docker)
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Utente81/caspmail.git
-   cd caspmail
-   ```
-
-2. **Configure Environment:**
-   Ensure your `.env` file (not committed to git) contains the required database passwords and Keycloak secrets.
-
-3. **Deploy the stack:**
-   ```bash
-   docker compose up -d --build
-   ```
-
-4. **Access the application:**
-   - **Login Portal**: `https://secure.internal/console/login`
-   *(Note: Ensure your local DNS or `/etc/hosts` resolves `secure.internal` to your server's IP).*
-
-### Local Development
-
-1. **Start the Database and Keycloak:**
-   ```bash
-   docker compose up -d db pgadmin keycloak
-   ```
-
-2. **Run the Backend:**
-   ```bash
-   cd backend
-   npm install
-   npm run start
-   ```
-
-3. **Run the Frontend (Hot-Reload):**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+*For a detailed technical breakdown, please refer to the [ARCHITECTURE.md](docs/ARCHITECTURE.md) guide.*
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Deployment (GitOps)
 
-*   **UI/UX**: React, Vite, Tailwind CSS, Lucide Icons
-*   **Data Visualization**: react-globe.gl, Three.js
-*   **Backend API**: Fastify, pg (node-postgres)
-*   **Authentication**: Keycloak (OIDC PKCE flow)
-*   **Infrastructure**: Docker, NGINX
+CasperMail is designed for seamless, automated deployment via **ArgoCD**.
+
+1. **Bootstrap the Cluster**:
+   Ensure your Kubernetes cluster has ArgoCD and Traefik installed.
+2. **Apply the Application**:
+   Apply the root ArgoCD application manifest which tracks this repository's `k8s/` directory.
+   ```bash
+   kubectl apply -f argocd-app-caspermail.yaml
+   ```
+3. **Vault Initialization**:
+   Once deployed, unseal the Vault StatefulSet manually (if auto-unseal is not configured) and initialize the Keycloak/PostgreSQL database connections using the provided initialization scripts.
 
 ---
 
-## 📄 License
-Confidential and Proprietary. All rights reserved.
+## 📚 Documentation
+
+- [Technical Architecture Deep Dive](docs/ARCHITECTURE.md)
+- [Enterprise Sales Pitch & Value Proposition](docs/SALES_PITCH.md)
+
+---
+
+## ⚖️ License
+Confidential and Proprietary. All rights reserved. Designed for Enterprise compliance (NIS2, GDPR, ISO 27001).

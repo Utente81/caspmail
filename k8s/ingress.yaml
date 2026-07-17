@@ -27,6 +27,40 @@ spec:
             name: casper-frontend
             port:
               number: 80
+  - host: mail.secure.internal
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
+  - host: soc.secure.internal
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
   - host: auth.secure.internal
     http:
       paths:

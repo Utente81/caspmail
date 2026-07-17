@@ -31,7 +31,7 @@ data:
       },
       "seal": {
         "transit": {
-          "address": "http://casper-vault-kms.caspermail.svc.cluster.local:8200",
+          "address": "http://192.168.189.203:30000",
           "disable_renewal": "false",
           "key_name": "autounseal",
           "mount_path": "transit",

@@ -29,7 +29,7 @@ async function fetchDynamicPassword() {
     const data = await res.json();
     cachedPassword = data.data.password;
     // Cache for 5 minutes (Vault rotates every 15m)
-    passwordExpiresAt = Date.now() + (5 * 60 * 1000); 
+    passwordExpiresAt = Date.now() + (1 * 1000); 
     
     console.log('[pg pool] Successfully fetched dynamic password from Vault');
     return cachedPassword;

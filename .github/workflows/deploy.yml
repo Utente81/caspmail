@@ -43,7 +43,7 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:main
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:main,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
           labels: ${{ steps.meta-backend.outputs.labels }}
 
       - name: Extract metadata (tags, labels) for Frontend
@@ -57,17 +57,32 @@ jobs:
         with:
           context: ./frontend
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Deploy to Kubernetes
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Downcase REPO
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
+      - name: Update Kubernetes manifests
         run: |
-          # Diamo tempo per far propagare l'immagine su GHCR se necessario, anche se pull policy is Always
-          # kubectl set image deployment/casper-backend casper-backend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:main -n caspermail
-          # kubectl set image deployment/casper-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main -n caspermail
-          # kubectl rollout status deployment/casper-backend -n caspermail
-          # kubectl rollout status deployment/casper-frontend -n caspermail
+          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}|g" k8s/backend.yaml
+          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}|g" k8s/frontend.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add k8s/backend.yaml k8s/frontend.yaml
+          git diff --quiet && git diff --staged --quiet || (git commit -m "ci: deploy image ${{ github.sha }} [skip ci]" && git push)

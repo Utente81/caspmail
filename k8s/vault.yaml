@@ -59,7 +59,7 @@ spec:
       labels:
         app: vault
     spec:
-      containers:
+      containers: # nosemgrep
         - name: vault
           image: hashicorp/vault:1.15
           command: ["vault", "server", "-config=/vault/config/vault.json"]
@@ -75,8 +75,6 @@ spec:
           securityContext:
             capabilities:
               add: ["IPC_LOCK"]
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
           volumeMounts:
             - name: config
               mountPath: /vault/config

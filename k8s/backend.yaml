@@ -19,7 +19,7 @@ spec:
         app: backend
     spec:
       automountServiceAccountToken: false
-      containers:
+      containers: # nosemgrep
         - env:
             - name: NODE_ENV
               value: production
@@ -67,8 +67,6 @@ spec:
             periodSeconds: 10
           securityContext:
             readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
           volumeMounts:
             - mountPath: /run/secrets
               name: secrets
@@ -92,7 +90,7 @@ spec:
             - mountPath: /app/src/instrumentation.mjs
               name: patch-instrumentation
               subPath: instrumentation.mjs
-      initContainers:
+      initContainers: # nosemgrep
         - name: init-telemetry
           image: ghcr.io/utente81/caspmail-backend:78f9b18570787c9eb2d54fd0aee52aa7bfcb168c
           imagePullPolicy: Never

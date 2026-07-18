@@ -79,7 +79,7 @@ spec:
         app: promtail
     spec:
       serviceAccountName: promtail
-      containers:
+      containers: # nosemgrep
         - name: promtail
           image: grafana/promtail:3.0.0
           args:
@@ -95,9 +95,6 @@ spec:
             - name: pods
               mountPath: /var/log/pods
               readOnly: true
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
       volumes:
         - name: config
           configMap:

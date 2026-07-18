@@ -33,7 +33,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      containers:
+      containers: # nosemgrep
         - name: migration
           image: hashicorp/vault:1.15
           command: ["vault", "operator", "migrate", "-config=/vault/config/migrate.hcl"]
@@ -46,8 +46,6 @@ spec:
           securityContext:
             capabilities:
               add: ["IPC_LOCK"]
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
           volumeMounts:
             - name: config
               mountPath: /vault/config

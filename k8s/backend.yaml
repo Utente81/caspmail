@@ -19,6 +19,8 @@ spec:
         app: backend
     spec:
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-login-secret
       containers: # nosemgrep
         - env:
             - name: NODE_ENV

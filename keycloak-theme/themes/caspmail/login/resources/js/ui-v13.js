@@ -17,7 +17,7 @@
       position: 'fixed',
       top: '0', left: '0', right: '0', bottom: '0',
       width: '100vw', height: '100vh',
-      zIndex: '-2', // Absolute back, behind particles (-1) and page (10)
+      zIndex: '1', // Absolute back, behind particles (-1) and page (10)
       pointerEvents: 'none',
       overflow: 'hidden'
     });
@@ -55,7 +55,7 @@
       left:          '0',
       width:         '100vw',
       height:        '100vh',
-      zIndex:        '-1', // Above stars, under card
+      zIndex:        '2', // Above stars, under card
       pointerEvents: 'none',
       display:       'block',
       background:    'transparent'

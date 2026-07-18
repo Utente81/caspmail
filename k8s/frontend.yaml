@@ -14,7 +14,7 @@ spec:
         app: frontend
     spec:
       containers: # nosemgrep
-        - image: ghcr.io/utente81/caspmail-frontend:7602220d36e5d1d4e09879cc3f81bc6701941548
+        - image: ghcr.io/utente81/caspmail-frontend:6a07c440668ba378b2b47aaa3548b15c8b686b17
           securityContext:
             readOnlyRootFilesystem: true
           imagePullPolicy: IfNotPresent

@@ -1,0 +1,156 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "43"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"backend"},"name":"casper-backend","namespace":"caspermail"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"backend"}},"template":{"metadata":{"labels":{"app":"backend"}},"spec":{"automountServiceAccountToken":false,"containers":[{"env":[{"name":"NODE_ENV","value":"production"},{"name":"PORT","value":"3000"},{"name":"DB_HOST","value":"casper-pg-postgresql-primary"},{"name":"DB_PORT","value":"5432"},{"name":"DB_USER","value":"caspermail"},{"name":"DB_NAME","value":"caspermail"},{"name":"DATABASE_SSL","value":"true"},{"name":"KEYCLOAK_ISSUER","value":"https://auth.secure.internal/realms/caspermail"},{"name":"KEYCLOAK_JWKS_URI","value":"http://casper-keycloak:8080/realms/caspermail/protocol/openid-connect/certs"},{"name":"KEYCLOAK_INTERNAL_URL","value":"http://casper-keycloak:8080"},{"name":"KEYCLOAK_REALM","value":"caspermail"},{"name":"KEYCLOAK_ADMIN_USER","value":"admin"},{"name":"CORS_ORIGINS","value":"https://secure.internal,https://mail.secure.internal,https://soc.secure.internal"}],"image":"caspermail-backend:latest","imagePullPolicy":"Never","name":"backend","ports":[{"containerPort":3000}],"readinessProbe":{"httpGet":{"path":"/health","port":3000},"initialDelaySeconds":10,"periodSeconds":10},"securityContext":{"readOnlyRootFilesystem":true},"volumeMounts":[{"mountPath":"/run/secrets","name":"secrets","readOnly":true},{"mountPath":"/tmp","name":"tmp"}]}],"volumes":[{"emptyDir":{},"name":"tmp"},{"name":"secrets","secret":{"secretName":"casper-secrets"}}]}}}}
+  creationTimestamp: "2026-06-28T18:42:09Z"
+  generation: 43
+  labels:
+    app: backend
+  name: casper-backend
+  namespace: caspermail
+  resourceVersion: "76928"
+  uid: 8c1650f1-0d1a-4960-89c4-06635e592d94
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-07-04T09:17:50+02:00"
+      labels:
+        app: backend
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: DB_HOST
+              value: casper-pg-postgresql-primary
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: caspermail
+            - name: DB_NAME
+              value: caspermail
+            - name: DATABASE_SSL
+              value: "true"
+            - name: KEYCLOAK_ISSUER
+              value: https://auth.secure.internal/realms/caspermail
+            - name: KEYCLOAK_JWKS_URI
+              value: http://casper-keycloak:8080/realms/caspermail/protocol/openid-connect/certs
+            - name: KEYCLOAK_INTERNAL_URL
+              value: http://casper-keycloak:8080
+            - name: KEYCLOAK_REALM
+              value: caspermail
+            - name: KEYCLOAK_ADMIN_USER
+              value: admin
+            - name: CORS_ORIGINS
+              value: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
+          image: caspermail-backend:latest
+          imagePullPolicy: Never
+          name: backend
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /app/migrations
+              name: backend-migrations
+            - mountPath: /run/secrets
+              name: secrets
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /app/src
+              name: backend-src
+            - mountPath: /app/node_modules
+              name: backend-node-modules
+      dnsPolicy: ClusterFirst
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - until nc -z casper-keycloak 8080; do echo waiting for keycloak; sleep 5; done;
+          env:
+            - name: DATABASE_SSL
+              value: "false"
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          name: wait-for-keycloak
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - hostPath:
+            path: /home/ubuntu/caspmail/new/backend/migrations
+            type: Directory
+          name: backend-migrations
+        - name: secrets
+          secret:
+            defaultMode: 420
+            secretName: casper-secrets
+        - hostPath:
+            path: /home/ubuntu/caspmail/new/backend/src
+            type: Directory
+          name: backend-src
+        - hostPath:
+            path: /home/ubuntu/caspmail/new/backend/node_modules
+            type: Directory
+          name: backend-node-modules
+status:
+  availableReplicas: 2
+  conditions:
+    - lastTransitionTime: "2026-07-03T20:13:28Z"
+      lastUpdateTime: "2026-07-03T20:13:28Z"
+      message: Deployment has minimum availability.
+      reason: MinimumReplicasAvailable
+      status: "True"
+      type: Available
+    - lastTransitionTime: "2026-06-28T18:57:48Z"
+      lastUpdateTime: "2026-07-04T07:18:20Z"
+      message: ReplicaSet "casper-backend-6d5d5d4687" has successfully progressed.
+      reason: NewReplicaSetAvailable
+      status: "True"
+      type: Progressing
+  observedGeneration: 43
+  readyReplicas: 2
+  replicas: 2
+  terminatingReplicas: 0
+  updatedReplicas: 2

@@ -16,12 +16,15 @@ spec:
         app: loki
     spec:
       containers:
-      - name: loki
-        image: grafana/loki:3.0.0
-        ports:
-        - containerPort: 3100
-        args:
-        - -config.file=/etc/loki/local-config.yaml
+        - name: loki
+          image: grafana/loki:3.0.0
+          ports:
+            - containerPort: 3100
+          args:
+            - -config.file=/etc/loki/local-config.yaml
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
 ---
 apiVersion: v1
 kind: Service
@@ -30,8 +33,8 @@ metadata:
   namespace: caspermail
 spec:
   ports:
-  - port: 3100
-    protocol: TCP
-    targetPort: 3100
+    - port: 3100
+      protocol: TCP
+      targetPort: 3100
   selector:
     app: loki

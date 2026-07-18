@@ -14,38 +14,38 @@ spec:
         app: pgadmin
     spec:
       containers:
-      - name: pgadmin
-        image: dpage/pgadmin4:8.8
-        securityContext:
-          runAsNonRoot: true
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsUser: 5050
-        env:
-        - name: PGADMIN_DEFAULT_EMAIL
-          value: admin@caspermail.com
-        - name: PGADMIN_DEFAULT_PASSWORD
-          value: admin123
-        - name: PGADMIN_SERVER_JSON_FILE
-          value: /pgadmin4/servers.json
-        ports:
-        - containerPort: 80
-        volumeMounts:
-        - name: pgadmin-servers
-          mountPath: /pgadmin4/servers.json
-          subPath: servers.json
-        - name: tmp-volume
-          mountPath: /tmp
-        - name: pgadmin-data
-          mountPath: /var/lib/pgadmin
+        - name: pgadmin
+          image: dpage/pgadmin4:8.8
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 5050
+          env:
+            - name: PGADMIN_DEFAULT_EMAIL
+              value: admin@caspermail.com
+            - name: PGADMIN_DEFAULT_PASSWORD
+              value: admin123
+            - name: PGADMIN_SERVER_JSON_FILE
+              value: /pgadmin4/servers.json
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: pgadmin-servers
+              mountPath: /pgadmin4/servers.json
+              subPath: servers.json
+            - name: tmp-volume
+              mountPath: /tmp
+            - name: pgadmin-data
+              mountPath: /var/lib/pgadmin
       volumes:
-      - name: pgadmin-servers
-        configMap:
-          name: pgadmin-servers
-      - name: tmp-volume
-        emptyDir: {}
-      - name: pgadmin-data
-        emptyDir: {}
+        - name: pgadmin-servers
+          configMap:
+            name: pgadmin-servers
+        - name: tmp-volume
+          emptyDir: {}
+        - name: pgadmin-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -54,8 +54,8 @@ metadata:
   namespace: caspermail
 spec:
   ports:
-  - port: 80
-    targetPort: 80
+    - port: 80
+      targetPort: 80
   selector:
     app: pgadmin
 ---

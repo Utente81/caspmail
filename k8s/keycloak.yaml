@@ -16,86 +16,86 @@ spec:
         app: keycloak
     spec:
       initContainers:
-      - name: init-keycloak
-        image: quay.io/keycloak/keycloak:25.0
-        command: ["/bin/sh", "-c", "cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/"]
-        securityContext:
-          runAsUser: 1000
-        volumeMounts:
-        - name: quarkus-lib
-          mountPath: /tmp/quarkus
+        - name: init-keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          command: ["/bin/sh", "-c", "cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/"]
+          securityContext:
+            runAsUser: 1000
+          volumeMounts:
+            - name: quarkus-lib
+              mountPath: /tmp/quarkus
       containers:
-      - name: keycloak
-        image: quay.io/keycloak/keycloak:25.0
-        securityContext:
-          runAsNonRoot: true
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-        command: ["/bin/bash", "-c"]
-        args: 
-          - |
-            /opt/keycloak/bin/kc.sh start
-        env:
-        - name: KC_DB
-          value: postgres
-        - name: KC_DB_URL
-          value: jdbc:postgresql://casper-cnpg-rw:5432/caspermail
-        - name: KC_DB_USERNAME
-          value: caspermail
-        - name: KC_DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: casper-secrets
-              key: postgres_password
-        - name: KEYCLOAK_ADMIN
-          value: admin
-        - name: KEYCLOAK_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: casper-secrets
-              key: keycloak_admin_password
-        - name: KC_HOSTNAME
-          value: auth.secure.internal
-        - name: KC_HOSTNAME_STRICT
-          value: "false"
-        - name: KC_HTTP_ENABLED
-          value: "true"
-        - name: KC_HTTP_PORT
-          value: "8080"
-        - name: KC_PROXY_HEADERS
-          value: xforwarded
-        - name: KC_LOG_LEVEL
-          value: INFO
-        - name: KC_HEALTH_ENABLED
-          value: "true"
-        # JGroups for HA clustering
-        - name: JGROUPS_DISCOVERY_PROTOCOL
-          value: dns.DNS_PING
-        - name: JGROUPS_DISCOVERY_PROPERTIES
-          value: "dns_query=casper-keycloak-headless.caspermail.svc.cluster.local"
-        ports:
-        - containerPort: 8080
-          name: http
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 9000
-          initialDelaySeconds: 60
-          periodSeconds: 10
-        volumeMounts:
-        - name: tmp-volume
-          mountPath: /tmp
-        - name: data-volume
-          mountPath: /opt/keycloak/data
-        - name: quarkus-lib
-          mountPath: /opt/keycloak/lib/quarkus
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              /opt/keycloak/bin/kc.sh start
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://casper-cnpg-rw:5432/caspermail
+            - name: KC_DB_USERNAME
+              value: caspermail
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: casper-secrets
+                  key: postgres_password
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: casper-secrets
+                  key: keycloak_admin_password
+            - name: KC_HOSTNAME
+              value: auth.secure.internal
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HTTP_PORT
+              value: "8080"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_LOG_LEVEL
+              value: INFO
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            # JGroups for HA clustering
+            - name: JGROUPS_DISCOVERY_PROTOCOL
+              value: dns.DNS_PING
+            - name: JGROUPS_DISCOVERY_PROPERTIES
+              value: "dns_query=casper-keycloak-headless.caspermail.svc.cluster.local"
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+            - name: data-volume
+              mountPath: /opt/keycloak/data
+            - name: quarkus-lib
+              mountPath: /opt/keycloak/lib/quarkus
       volumes:
-      - name: tmp-volume
-        emptyDir: {}
-      - name: data-volume
-        emptyDir: {}
-      - name: quarkus-lib
-        emptyDir: {}
+        - name: tmp-volume
+          emptyDir: {}
+        - name: data-volume
+          emptyDir: {}
+        - name: quarkus-lib
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -20,10 +20,6 @@ provider.register({
 registerInstrumentations({
   instrumentations: [
     new DocumentLoadInstrumentation(),
-    new FetchInstrumentation({
-      propagateTraceHeaderCorsUrls: [
-        new RegExp('.*'),
-      ],
-    }),
+    new FetchInstrumentation(),
   ],
 });

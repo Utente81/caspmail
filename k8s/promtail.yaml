@@ -8,13 +8,13 @@ data:
     server:
       http_listen_port: 9080
       grpc_listen_port: 0
-    
+
     clients:
       - url: http://loki:3100/loki/api/v1/push
-    
+
     positions:
       filename: /tmp/positions.yaml
-    
+
     scrape_configs:
       - job_name: kubernetes-pods
         kubernetes_sd_configs:
@@ -95,6 +95,9 @@ spec:
             - name: pods
               mountPath: /var/log/pods
               readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
       volumes:
         - name: config
           configMap:

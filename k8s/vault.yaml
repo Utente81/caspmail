@@ -60,33 +60,35 @@ spec:
         app: vault
     spec:
       containers:
-      - name: vault
-        image: hashicorp/vault:1.15
-        command: ["vault", "server", "-config=/vault/config/vault.json"]
-        env:
-        - name: VAULT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: vault-unseal-token
-              key: token
-        ports:
-        - containerPort: 8200
-          name: http
-        securityContext:
-          capabilities:
-            add: ["IPC_LOCK"]
-        volumeMounts:
-        - name: config
-          mountPath: /vault/config
-        - name: data
-          mountPath: /vault/file
+        - name: vault
+          image: hashicorp/vault:1.15
+          command: ["vault", "server", "-config=/vault/config/vault.json"]
+          env:
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-unseal-token
+                  key: token
+          ports:
+            - containerPort: 8200
+              name: http
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: config
+              mountPath: /vault/config
+            - name: data
+              mountPath: /vault/file
       volumes:
-      - name: config
-        configMap:
-          name: vault-config
-      - name: data
-        persistentVolumeClaim:
-          claimName: vault-data
+        - name: config
+          configMap:
+            name: vault-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: vault-data
 ---
 apiVersion: v1
 kind: Service

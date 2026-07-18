@@ -6,7 +6,7 @@ metadata:
 data:
   migrate.hcl: |
     cluster_addr = "http://127.0.0.1:8201"
-    
+
     storage_source "file" {
       path = "/vault/source"
     }
@@ -34,32 +34,34 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-      - name: migration
-        image: hashicorp/vault:1.15
-        command: ["vault", "operator", "migrate", "-config=/vault/config/migrate.hcl"]
-        env:
-        - name: VAULT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: vault-unseal-token
-              key: token
-        securityContext:
-          capabilities:
-            add: ["IPC_LOCK"]
-        volumeMounts:
-        - name: config
-          mountPath: /vault/config
-        - name: source-data
-          mountPath: /vault/source
-        - name: dest-data
-          mountPath: /vault/destination
+        - name: migration
+          image: hashicorp/vault:1.15
+          command: ["vault", "operator", "migrate", "-config=/vault/config/migrate.hcl"]
+          env:
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-unseal-token
+                  key: token
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: config
+              mountPath: /vault/config
+            - name: source-data
+              mountPath: /vault/source
+            - name: dest-data
+              mountPath: /vault/destination
       volumes:
-      - name: config
-        configMap:
-          name: vault-migration-config
-      - name: source-data
-        persistentVolumeClaim:
-          claimName: vault-data
-      - name: dest-data
-        persistentVolumeClaim:
-          claimName: data-casper-vault-0
+        - name: config
+          configMap:
+            name: vault-migration-config
+        - name: source-data
+          persistentVolumeClaim:
+            claimName: vault-data
+        - name: dest-data
+          persistentVolumeClaim:
+            claimName: data-casper-vault-0

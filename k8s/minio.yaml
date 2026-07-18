@@ -49,6 +49,9 @@ spec:
           volumeMounts:
             - name: minio-data
               mountPath: /data
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
       volumes:
         - name: minio-data
           persistentVolumeClaim:

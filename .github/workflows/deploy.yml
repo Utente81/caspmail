@@ -62,12 +62,12 @@ jobs:
 
   deploy:
     needs: build-and-push
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Deploy to Kubernetes
         run: |
           # Diamo tempo per far propagare l'immagine su GHCR se necessario, anche se pull policy is Always
-          kubectl set image deployment/casper-backend casper-backend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:main -n caspermail
-          kubectl set image deployment/casper-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main -n caspermail
-          kubectl rollout status deployment/casper-backend -n caspermail
-          kubectl rollout status deployment/casper-frontend -n caspermail
+          # kubectl set image deployment/casper-backend casper-backend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:main -n caspermail
+          # kubectl set image deployment/casper-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main -n caspermail
+          # kubectl rollout status deployment/casper-backend -n caspermail
+          # kubectl rollout status deployment/casper-frontend -n caspermail

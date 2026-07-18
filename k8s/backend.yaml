@@ -56,7 +56,7 @@ spec:
                   key: vault_token
             - name: CORS_ORIGINS
               value: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
-          image: ghcr.io/utente81/caspmail-backend:1b3f99e04195febe9205c4df65ef8ca9bc8cf1eb
+          image: ghcr.io/utente81/caspmail-backend:52d64a6047aeda43eaa034014a619151d923a672
           imagePullPolicy: IfNotPresent
           name: backend
           ports:
@@ -94,7 +94,7 @@ spec:
               subPath: instrumentation.mjs
       initContainers: # nosemgrep
         - name: init-telemetry
-          image: ghcr.io/utente81/caspmail-backend:1b3f99e04195febe9205c4df65ef8ca9bc8cf1eb
+          image: ghcr.io/utente81/caspmail-backend:52d64a6047aeda43eaa034014a619151d923a672
           imagePullPolicy: IfNotPresent
           command:
             - sh

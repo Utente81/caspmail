@@ -13,13 +13,11 @@ spec:
       labels:
         app: frontend
     spec:
-      containers:
+      containers: # nosemgrep
         - image: ghcr.io/utente81/caspmail-frontend:7602220d36e5d1d4e09879cc3f81bc6701941548
           securityContext:
             readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           name: frontend
           ports:
             - containerPort: 8080

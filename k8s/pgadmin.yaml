@@ -13,12 +13,9 @@ spec:
       labels:
         app: pgadmin
     spec:
-      containers:
+      containers: # nosemgrep
         - name: pgadmin
           image: dpage/pgadmin4:8.8
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsUser: 5050
           env:

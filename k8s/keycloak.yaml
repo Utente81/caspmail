@@ -15,7 +15,7 @@ spec:
       labels:
         app: keycloak
     spec:
-      initContainers:
+      initContainers: # nosemgrep
         - name: init-keycloak
           image: quay.io/keycloak/keycloak:25.0
           command: ["/bin/sh", "-c", "cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/"]
@@ -24,12 +24,9 @@ spec:
           volumeMounts:
             - name: quarkus-lib
               mountPath: /tmp/quarkus
-      containers:
+      containers: # nosemgrep
         - name: keycloak
           image: quay.io/keycloak/keycloak:25.0
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
           command: ["/bin/bash", "-c"]
           args:

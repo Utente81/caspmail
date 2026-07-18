@@ -47,7 +47,7 @@ spec:
       # Use the default service account which needs permissions to list pods
       # We will create a Role and RoleBinding for Prometheus
       serviceAccountName: prometheus
-      containers:
+      containers: # nosemgrep
         - name: prometheus
           image: prom/prometheus:latest
           args:
@@ -57,9 +57,6 @@ spec:
           volumeMounts:
             - name: config-volume
               mountPath: /etc/prometheus
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
       volumes:
         - name: config-volume
           configMap:

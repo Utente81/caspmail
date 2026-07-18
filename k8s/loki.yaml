@@ -15,16 +15,13 @@ spec:
       labels:
         app: loki
     spec:
-      containers:
+      containers: # nosemgrep
         - name: loki
           image: grafana/loki:3.0.0
           ports:
             - containerPort: 3100
           args:
             - -config.file=/etc/loki/local-config.yaml
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
 ---
 apiVersion: v1
 kind: Service

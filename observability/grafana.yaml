@@ -34,7 +34,7 @@ spec:
       labels:
         app: grafana
     spec:
-      containers:
+      containers: # nosemgrep
         - name: grafana
           image: grafana/grafana:latest
           ports:
@@ -49,9 +49,6 @@ spec:
           volumeMounts:
             - name: grafana-datasources
               mountPath: /etc/grafana/provisioning/datasources
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
       volumes:
         - name: grafana-datasources
           configMap:

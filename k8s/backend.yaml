@@ -55,7 +55,7 @@ spec:
             - name: CORS_ORIGINS
               value: https://secure.internal,https://mail.secure.internal,https://soc.secure.internal
           image: ghcr.io/utente81/caspmail-backend:7602220d36e5d1d4e09879cc3f81bc6701941548
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           name: backend
           ports:
             - containerPort: 3000
@@ -93,7 +93,7 @@ spec:
       initContainers: # nosemgrep
         - name: init-telemetry
           image: ghcr.io/utente81/caspmail-backend:7602220d36e5d1d4e09879cc3f81bc6701941548
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           command:
             - sh
             - -c

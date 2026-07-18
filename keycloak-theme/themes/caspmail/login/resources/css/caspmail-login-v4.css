@@ -6,7 +6,7 @@
 html.login-pf,
 html.login-pf body,
 body {
-  background: radial-gradient(120% 120% at 50% -20%, #1e1b4b 0%, #020617 100%) !important;
+  background: #020617 !important;
   background-color: #020617 !important;
   color: #f8fafc !important;
   font-family: 'Outfit', system-ui, -apple-system, sans-serif !important;
@@ -50,7 +50,7 @@ body::after {
   left: 50%;
   width: 60vw;
   height: 60vh;
-  background: radial-gradient(circle, rgba(14,165,233,0.15) 0%, transparent 70%);
+  background: #020617 !important;
   transform: translate(-50%, -50%);
   z-index: 0;
   pointer-events: none;

@@ -8,9 +8,43 @@
   const COLOR_G        = 165;
   const COLOR_B        = 233;
 
-  /* ── Particle network on a FIXED canvas ── */
+  /* ── 1. Starry Background (Twinkling Stars) ── */
+  function initStars() {
+    if (document.getElementById('caspmail-stars')) return;
+    const starsLayer = document.createElement('div');
+    starsLayer.id = 'caspmail-stars';
+    Object.assign(starsLayer.style, {
+      position: 'fixed',
+      top: '0', left: '0', right: '0', bottom: '0',
+      width: '100vw', height: '100vh',
+      zIndex: '-2', // Absolute back, behind particles (-1) and page (10)
+      pointerEvents: 'none',
+      overflow: 'hidden'
+    });
+    
+    // Add 40 stars
+    for (let i = 0; i < 40; i++) {
+      const star = document.createElement('div');
+      const size = Math.random() * 3 + 2; // 2-5px
+      Object.assign(star.style, {
+        position: 'absolute',
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        width: `${size}px`,
+        height: `${size}px`,
+        animationDelay: `${Math.random() * 6}s`,
+        opacity: Math.random() * 0.6 + 0.4,
+      });
+      // Assing animation class
+      star.className = `star star-${(i % 4) + 1}`;
+      starsLayer.appendChild(star);
+    }
+    
+    document.body.prepend(starsLayer);
+  }
+
+  /* ── 2. Particle network on a FIXED canvas ── */
   function initParticles() {
-    // Avoid multiple canvases if re-executed
     if (document.getElementById('caspmail-particles')) return;
 
     const canvas = document.createElement('canvas');
@@ -21,13 +55,12 @@
       left:          '0',
       width:         '100vw',
       height:        '100vh',
-      zIndex:        '0', // Under .login-pf-page which is z-index 10
+      zIndex:        '-1', // Above stars, under card
       pointerEvents: 'none',
       display:       'block',
       background:    'transparent'
     });
     
-    // Prepend to body so it sits at the absolute back, but above body background
     document.body.prepend(canvas);
 
     const ctx = canvas.getContext('2d');
@@ -90,7 +123,7 @@
     draw();
   }
 
-  /* ── CaspMail logo ── */
+  /* ── 3. CaspMail logo ── */
   function injectLogo() {
     if (document.getElementById('caspmail-logo')) return;
     
@@ -116,6 +149,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     injectLogo();
+    initStars();
     initParticles();
   });
 

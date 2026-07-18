@@ -1,28 +1,32 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // Add CaspMail Logo
+  // Attach everything to .login-pf-page so it's safely inside the main layout
+  const container = document.querySelector('.login-pf-page') || document.body;
+  
+  // 1. Add CaspMail Logo in Top Left
   const logo = document.createElement("div");
   logo.textContent = "CaspMail";
   Object.assign(logo.style, {
     position: "absolute",
     top: "32px",
     left: "48px",
-    fontSize: "28px",
-    fontWeight: "700",
+    fontSize: "32px",
+    fontWeight: "800",
     color: "#fff",
     letterSpacing: "-1px",
-    zIndex: "100",
-    fontFamily: "'Outfit', sans-serif"
+    zIndex: "9999",
+    fontFamily: "'Outfit', sans-serif",
+    textShadow: "0 2px 10px rgba(14,165,233,0.5)"
   });
-  document.body.appendChild(logo);
+  container.appendChild(logo);
 
-  // Add stars background layer
+  // 2. Add Stars background
   const starsLayer = document.createElement("div");
   starsLayer.className = "stars-layer";
   
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const star = document.createElement("div");
     star.className = "star";
-    const size = Math.random() * 3 + 2; // 2–5px
+    const size = Math.random() * 3 + 1; // 1-4px
     Object.assign(star.style, {
       top: `${Math.random() * 100}%`,
       left: `${Math.random() * 100}%`,
@@ -34,5 +38,5 @@ document.addEventListener("DOMContentLoaded", () => {
     starsLayer.appendChild(star);
   }
   
-  document.body.prepend(starsLayer);
+  container.prepend(starsLayer);
 });

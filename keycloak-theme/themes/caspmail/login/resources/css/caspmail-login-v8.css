@@ -1,0 +1,103 @@
+/* 1. Global Reset & Body */
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #0B0E14 !important; /* Dark space background */
+}
+
+/* Make Keycloak page container transparent so body background shows */
+.login-pf-page {
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  position: relative;
+  z-index: 1;
+}
+
+/* Hide all the extra spacing/margins Keycloak adds */
+.login-pf-page .card-pf {
+  margin: 0 !important;
+}
+
+/* 2. Hide default title / header (We will inject custom logo via JS) */
+.login-pf-header,
+#kc-header,
+#kc-page-title {
+  display: none !important;
+}
+
+/* 3. The Card (Glassmorphism Mirror Effect exactly like Welcome Page .app-card) */
+.card-pf {
+  width: 100% !important;
+  max-width: 420px !important; 
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 20px !important;
+  padding: 48px 40px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  color: #fff !important;
+}
+
+/* Inputs & Buttons styling for the dark card */
+.form-control {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  height: auto !important;
+  font-size: 1rem !important;
+}
+.form-control:focus {
+  border-color: rgba(14, 165, 233, 0.5) !important;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.3) !important;
+}
+label {
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #0ea5e9, #3b82f6) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
+  font-size: 1.1rem !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  transition: all 0.3s !important;
+  width: 100% !important;
+  margin-top: 24px !important;
+}
+.btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4) !important;
+}
+
+/* 4. Stars Layer */
+.stars-layer {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px 2px rgba(255,255,255,0.8);
+  animation: twinkleA 4s infinite alternate;
+}
+@keyframes twinkleA { 
+  0%, 100% { opacity: 0.2; transform: scale(0.8); } 
+  50% { opacity: 1; transform: scale(1.2); } 
+}

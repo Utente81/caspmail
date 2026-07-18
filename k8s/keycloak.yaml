@@ -27,7 +27,6 @@ spec:
       containers: # nosemgrep
         - name: keycloak
           image: quay.io/keycloak/keycloak:25.0
-            readOnlyRootFilesystem: true
           command: ["/bin/bash", "-c"]
           args:
             - |

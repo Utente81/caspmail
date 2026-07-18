@@ -16,8 +16,6 @@ spec:
       containers: # nosemgrep
         - name: pgadmin
           image: dpage/pgadmin4:8.8
-            readOnlyRootFilesystem: true
-            runAsUser: 5050
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               value: admin@caspermail.com

@@ -280,3 +280,8 @@ p, span, div, h1, h2, h3, h4, h5, h6 {
 .card-pf {
   margin: auto !important;
 }
+
+/* Hide default Keycloak header since we have the logo in top-left */
+#kc-header {
+  display: none !important;
+}

@@ -35,8 +35,6 @@ spec:
             - |
               /opt/keycloak/bin/kc.sh start
           env:
-            - name: KC_SPI_THEME_DEFAULT
-              value: caspmail
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL

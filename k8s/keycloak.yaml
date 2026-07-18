@@ -26,12 +26,15 @@ spec:
               mountPath: /tmp/quarkus
       containers: # nosemgrep
         - name: keycloak
-          image: quay.io/keycloak/keycloak:25.0
+          image: ghcr.io/utente81/caspmail-keycloak:main
+          imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - |
               /opt/keycloak/bin/kc.sh start
           env:
+            - name: KC_SPI_THEME_DEFAULT
+              value: caspmail
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL

@@ -60,6 +60,21 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:main,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
 
+
+      - name: Extract metadata (tags, labels) for Keycloak
+        id: meta-keycloak
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-keycloak
+
+      - name: Build and push Keycloak image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./keycloak-theme
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-keycloak:main,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-keycloak:${{ github.sha }}
+          labels: ${{ steps.meta-keycloak.outputs.labels }}
+
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -77,8 +92,9 @@ jobs:
 
       - name: Update Kubernetes manifests
         run: |
-          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}|g" k8s/backend.yaml
-          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}|g" k8s/frontend.yaml
+          sed -i "s|image: .*caspmail-backend.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}|g" k8s/backend.yaml
+          sed -i "s|image: .*caspmail-frontend.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}|g" k8s/frontend.yaml
+          sed -i "s|image: .*caspmail-keycloak.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-keycloak:${{ github.sha }}|g" k8s/keycloak.yaml
 
       - name: Commit and push changes
         run: |

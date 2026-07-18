@@ -1,13 +1,21 @@
-apiVersion: v1
-kind: Secret
+
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
 metadata:
+  creationTimestamp: null
   name: cnpg-app-secret
   namespace: caspermail
-type: kubernetes.io/basic-auth
-stringData:
-  username: caspermail
-  # Injected via script
-  password: __POSTGRES_PASSWORD__
+spec:
+  encryptedData:
+    password: AgAwbGR3TWFLLU24ccV8sLJqkd9WcBO5WEgBoWoSXXSYGh4g6S46QSq7ItawPiT2W8qKj4NWJnilyk7MRtvxLwav9EcS/SwFwiZ5J6LFeIg8lxDGOZBgBdXur9B3cNQvtj0rln4sWWDEif+YSfNO0hCzXYR9uNXJotdVDIm59SaJwoHDlS7EtNh7Yc17/e4tSZhueEQ57GBQ52O0wCx4RBZSev7s8IXj8bEWe9h1xTfSEgNIw7Jg50x8yqJsnCWOWi/3wcdXvgzxGNGLvgLjSc1oq3FLh6W3/tI4b4HrsfpBhb7h0zPGbn2DlCsHthZYA0SsUCM5RaB0E7WeHqUjtXieouGtptI+8OB0weUiG3eNZRNm+QZ0YX3CabT8h7KL/ZaGeb8bhqAazd4SqhEZnrH3cvMIHi67x5I6oqzENiBWfiKGkUGFfjLOroV48IddLHN+LF72G8j4loX+LkUNdhBmz97x7prFurdDJDZys7FKHG5Iy+eVowx+zMHyYs3RW0crRBtrVP9W4raPsRvAehZNHxqLAveCRC3YaGmvTY3i3ouNQKeLTOVSDSC32hoMIh/ZDDN6aTh3bqDw3QdkOnhLV1Q+r5ekPcvH2hjlsyd38DjR3FhtxjxHzQE9VDraTtW0Zz7FqGKpcMK+nnXVZYHrQlFlU4HSgHNuw7aRJttPNQ6vbP+KSAIhPtR3LEOwDCfpZ2FsAlhQ9BV+1DKDVkMovfE=
+    username: AgAtnaARdJ2tkRWOXc+lvomhp37XdxZXB1r2AxCaelPZ5tR8tnViugbZ+9RZ7oFmuMfBR/amz2l8SqN7EcMUYtD0O/PpLzwDDysGcjf3Cm6BarOz1CzSL9Oh+f7NzQw3WRbuFcRlFZy6TXVrPor1E6JjXCMJUGGawQ6+YtJynENNJDkLp+utc8v0pOvWL96gmgVR3TiiqTEQREY+W/wN3O4MFGzykdrnIHBGkCMLKYC7t9vuScJkJk6PxFrwslWQpXgGJvivVQtgBDIu6sB+45rnKUiARqAXJvmpAdR8FrdwCh4A7pgtK9x9tQhN71Slr/peV5LDpBl+6NAUmpGdWgCc1H0tIc1JsvNoSsF4S3fXcjj3/MJyYanL6wm1PDnCnkHE8JcQbINYfDRKGnilV832r4n+AAzu2FmPU1vRKuOFgEbF1uwqgEAIUsUqzfyM9prlRCJFe2q+c7R/cnkJAjPf7L6gegM9C2UQ/7QpEw8Qp2mHr8uggaYL1ViUSySegbWYeMi3KPFIRdkMKZQ7A1BWp+/N+Khqi5NAexMse7zsr36Endnc0BhiNwi40agcFLRrIZ4JLw5gsmyAbf0TGx9ptT8tUs+/1hG5qp3EzzdTptveNDsOwxIbFmgIp7Apb1fwTGBK04M91lWI15BRWyZclhBdyqviXfQIw1sVErBa0prIxt9B6XRwgkVpm9Nbi4hWCCFULwPEfUcC
+  template:
+    metadata:
+      creationTimestamp: null
+      name: cnpg-app-secret
+      namespace: caspermail
+    type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

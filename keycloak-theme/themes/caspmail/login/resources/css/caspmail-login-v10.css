@@ -1,0 +1,188 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
+/* ── Reset & Body ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: 'Outfit', sans-serif !important;
+  background-color: #0B0E14 !important;
+  color: #e2e8f0 !important;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Hide default Keycloak header/title ── */
+.login-pf-header,
+#kc-header,
+#kc-page-title {
+  display: none !important;
+}
+
+/* ── Page container: centered flex ── */
+.login-pf-page {
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 100vh !important;
+  width: 100vw !important;
+  position: relative !important;
+  z-index: 1;
+}
+
+/* ── The Login Card ── */
+.card-pf {
+  width: 100% !important;
+  max-width: 420px !important;
+  background: rgba(15, 20, 40, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  padding: 48px 40px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(28px) !important;
+  -webkit-backdrop-filter: blur(28px) !important;
+  /* NO color override — let children control their own colors */
+  position: relative;
+  z-index: 10;
+}
+
+.login-pf-page .card-pf {
+  margin: 0 !important;
+}
+
+/* ── Typography inside card ── */
+.card-pf h1,
+.card-pf h2,
+.card-pf h3 {
+  color: #f1f5f9 !important;
+  font-weight: 700 !important;
+}
+
+label,
+.control-label {
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
+  font-size: 0.9rem !important;
+}
+
+/* ── Form inputs ── */
+.form-control {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #f1f5f9 !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  height: auto !important;
+  font-size: 1rem !important;
+  font-family: 'Outfit', sans-serif !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+.form-control::placeholder {
+  color: rgba(148, 163, 184, 0.5) !important;
+}
+.form-control:focus {
+  outline: none !important;
+  border-color: rgba(14, 165, 233, 0.6) !important;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15) !important;
+  background: rgba(255, 255, 255, 0.09) !important;
+}
+
+/* ── Primary button (Sign In) ── */
+.btn-primary {
+  background: linear-gradient(135deg, #0ea5e9, #3b82f6) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  padding: 13px !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  letter-spacing: 0.02em !important;
+  transition: all 0.3s !important;
+  width: 100% !important;
+  margin-top: 20px !important;
+  cursor: pointer !important;
+  font-family: 'Outfit', sans-serif !important;
+}
+.btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.45) !important;
+  opacity: 0.95 !important;
+}
+
+/* ── "Try Another Way" / secondary buttons ── */
+.btn-default,
+#kc-select-try-another-way-form .btn,
+#kc-select-try-another-way-form input[type="submit"] {
+  background: rgba(14, 165, 233, 0.10) !important;
+  border: 1px solid rgba(14, 165, 233, 0.35) !important;
+  color: #38bdf8 !important;
+  border-radius: 12px !important;
+  padding: 11px 20px !important;
+  font-size: 0.95rem !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.25s !important;
+  width: 100% !important;
+  margin-top: 12px !important;
+  font-family: 'Outfit', sans-serif !important;
+}
+.btn-default:hover,
+#kc-select-try-another-way-form .btn:hover,
+#kc-select-try-another-way-form input[type="submit"]:hover {
+  background: rgba(14, 165, 233, 0.22) !important;
+  border-color: rgba(14, 165, 233, 0.65) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.25) !important;
+}
+
+/* ── Links ── */
+.login-pf-page a,
+.login-pf-page .kc-link {
+  color: #38bdf8 !important;
+  text-decoration: none !important;
+}
+.login-pf-page a:hover {
+  color: #7dd3fc !important;
+  text-decoration: underline !important;
+}
+
+/* ── Credential picker / WebAuthn options ── */
+.select-auth-box,
+.kc-auth-option,
+.pf-c-tile {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  color: #e2e8f0 !important;
+  transition: all 0.25s !important;
+}
+.select-auth-box:hover,
+.kc-auth-option:hover,
+.pf-c-tile:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(14, 165, 233, 0.45) !important;
+  color: #fff !important;
+}
+
+/* ── Alert / error messages ── */
+.alert-error,
+.pf-c-alert--danger {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  border-radius: 10px !important;
+  color: #fca5a5 !important;
+}
+.alert-success {
+  background: rgba(34, 197, 94, 0.1) !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+  border-radius: 10px !important;
+  color: #86efac !important;
+}
+
+/* ── Checkbox ── */
+input[type="checkbox"] {
+  accent-color: #0ea5e9 !important;
+}

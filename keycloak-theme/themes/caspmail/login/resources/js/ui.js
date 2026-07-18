@@ -1,27 +1,33 @@
 (function () {
+  'use strict';
+
   const PARTICLE_COUNT = 110;
   const MAX_DIST       = 160;
   const SPEED          = 0.35;
-  const COLOR          = '14, 165, 233';
+  const COLOR_R        = 14;
+  const COLOR_G        = 165;
+  const COLOR_B        = 233;
 
-  function initCanvas(container) {
+  /* ── Particle network on a FIXED canvas (covers full viewport) ── */
+  function initParticles() {
     const canvas = document.createElement('canvas');
     Object.assign(canvas.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      zIndex: '0',
+      position:      'fixed',
+      top:           '0',
+      left:          '0',
+      width:         '100vw',
+      height:        '100vh',
+      zIndex:        '0',
       pointerEvents: 'none',
-      display: 'block',
+      display:       'block',
     });
-    container.prepend(canvas);
+    document.body.prepend(canvas);
 
     const ctx = canvas.getContext('2d');
 
     function resize() {
-      canvas.width  = container.clientWidth  || window.innerWidth;
-      canvas.height = container.clientHeight || window.innerHeight;
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
     resize();
     window.addEventListener('resize', resize);
@@ -34,10 +40,10 @@
       r:  Math.random() * 1.5 + 1,
     }));
 
-    let raf;
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Move particles
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
@@ -45,18 +51,18 @@
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
       }
 
-      // Lines between nearby particles
+      // Draw connecting lines
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx   = particles[i].x - particles[j].x;
           const dy   = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < MAX_DIST) {
-            const alpha = (1 - dist / MAX_DIST) * 0.4;
+            const alpha = (1 - dist / MAX_DIST) * 0.35;
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(${COLOR}, ${alpha})`;
+            ctx.strokeStyle = `rgba(${COLOR_R},${COLOR_G},${COLOR_B},${alpha})`;
             ctx.lineWidth   = 0.7;
             ctx.stroke();
           }
@@ -67,46 +73,43 @@
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle   = `rgba(${COLOR}, 0.75)`;
-        ctx.shadowBlur  = 6;
-        ctx.shadowColor = `rgba(${COLOR}, 0.9)`;
+        ctx.shadowBlur  = 8;
+        ctx.shadowColor = `rgba(${COLOR_R},${COLOR_G},${COLOR_B},0.9)`;
+        ctx.fillStyle   = `rgba(${COLOR_R},${COLOR_G},${COLOR_B},0.75)`;
         ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.shadowBlur  = 0;
       }
 
-      raf = requestAnimationFrame(draw);
+      requestAnimationFrame(draw);
     }
 
     draw();
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const container = document.querySelector('.login-pf-page') || document.body;
-    
-    // Ensure the container has relative positioning so canvas and logo are correctly positioned
-    if (container.style.position !== 'absolute' && container.style.position !== 'fixed') {
-      container.style.position = 'relative';
-    }
-
-    // 1. CaspMail logo — top left of the page
+  /* ── CaspMail logo — fixed top-left of viewport ── */
+  function injectLogo() {
     const logo = document.createElement('div');
     logo.textContent = 'CaspMail';
     Object.assign(logo.style, {
-      position:     'absolute',
-      top:          '32px',
-      left:         '48px',
-      fontSize:     '32px',
-      fontWeight:   '800',
-      color:        '#fff',
-      letterSpacing: '-1px',
-      zIndex:       '9999',
-      fontFamily:   "'Outfit', sans-serif",
-      textShadow:   '0 2px 10px rgba(14,165,233,0.5)',
+      position:      'fixed',
+      top:           '32px',
+      left:          '48px',
+      fontSize:      '30px',
+      fontWeight:    '800',
+      color:         '#ffffff',
+      letterSpacing: '-0.5px',
+      zIndex:        '9999',
+      fontFamily:    "'Outfit', sans-serif",
+      textShadow:    '0 2px 12px rgba(14,165,233,0.6)',
       pointerEvents: 'none',
+      userSelect:    'none',
     });
-    container.appendChild(logo);
+    document.body.appendChild(logo);
+  }
 
-    // 2. Particle network canvas
-    initCanvas(container);
+  document.addEventListener('DOMContentLoaded', function () {
+    injectLogo();
+    initParticles();
   });
+
 })();

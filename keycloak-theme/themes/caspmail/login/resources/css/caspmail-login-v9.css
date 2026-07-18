@@ -101,3 +101,52 @@ label {
   0%, 100% { opacity: 0.2; transform: scale(0.8); } 
   50% { opacity: 1; transform: scale(1.2); } 
 }
+
+/* ── "Try Another Way" button fix ── */
+#kc-select-try-another-way-form .btn,
+#try-another-way,
+a[id*="try"],
+.pf-c-button,
+#kc-attempted-username,
+.login-pf-page a {
+  color: #e0f2fe !important;
+  opacity: 1 !important;
+}
+
+#kc-select-try-another-way-form {
+  margin-top: 16px;
+}
+
+#kc-select-try-another-way-form .btn-default,
+#kc-select-try-another-way-form input[type="submit"] {
+  background: rgba(14, 165, 233, 0.12) !important;
+  border: 1px solid rgba(14, 165, 233, 0.4) !important;
+  color: #38bdf8 !important;
+  border-radius: 10px !important;
+  padding: 10px 20px !important;
+  font-size: 0.95rem !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.3s !important;
+  width: 100% !important;
+}
+
+#kc-select-try-another-way-form .btn-default:hover,
+#kc-select-try-another-way-form input[type="submit"]:hover {
+  background: rgba(14, 165, 233, 0.25) !important;
+  border-color: rgba(14, 165, 233, 0.7) !important;
+  color: #fff !important;
+}
+
+/* Also fix the WebAuthn / credential picker buttons */
+.select-auth-box, .kc-auth-option {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  color: #e2e8f0 !important;
+  transition: all 0.3s !important;
+}
+.select-auth-box:hover, .kc-auth-option:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(14, 165, 233, 0.4) !important;
+}

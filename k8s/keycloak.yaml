@@ -15,6 +15,8 @@ spec:
       labels:
         app: keycloak
     spec:
+      imagePullSecrets:
+        - name: ghcr-login-secret
       initContainers: # nosemgrep
         - name: init-keycloak
           image: quay.io/keycloak/keycloak:25.0

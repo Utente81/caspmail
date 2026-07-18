@@ -14,7 +14,7 @@ spec:
         app: frontend
     spec:
       containers:
-        - image: caspermail-frontend:latest
+        - image: ghcr.io/utente81/caspmail-frontend:78f9b18570787c9eb2d54fd0aee52aa7bfcb168c
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true

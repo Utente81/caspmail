@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Plus, Search, Loader2 } from 'lucide-react';
+import { Lock, Plus, Search, Loader2, Edit, Trash2 } from 'lucide-react';
 import { authFetch } from '../../auth/tokenRefresh.js';
 
 export default function AdminPolicies() {
@@ -8,9 +8,10 @@ export default function AdminPolicies() {
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editPolicyId, setEditPolicyId] = useState(null);
   
   const [formData, setFormData] = useState({
-    title: '', content: '', version: '1.0'
+    title: '', content: '', version: '1.0', is_active: true
   });
 
   useEffect(() => {
@@ -40,20 +41,48 @@ export default function AdminPolicies() {
     if (!formData.title || !formData.content) return;
     setSubmitting(true);
     try {
-      const res = await authFetch('/api/admin/policies', {
-        method: 'POST',
+      const url = editPolicyId ? `/api/admin/policies/${editPolicyId}` : '/api/admin/policies';
+      const method = editPolicyId ? 'PUT' : 'POST';
+      
+      const res = await authFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
       if (res.ok) {
         setShowForm(false);
-        setFormData({ title: '', content: '', version: '1.0' });
+        setFormData({ title: '', content: '', version: '1.0', is_active: true });
+        setEditPolicyId(null);
         loadPolicies();
+      } else {
+        alert('Failed to save policy');
       }
     } catch (err) {
       console.error(err);
     }
     setSubmitting(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this policy?')) return;
+    try {
+      const res = await authFetch(`/api/admin/policies/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadPolicies();
+      }
+    } catch (e) {}
+  };
+
+  const openEdit = (p) => {
+    setEditPolicyId(p.id);
+    setFormData({ title: p.title, content: p.content, version: p.version, is_active: p.is_active });
+    setShowForm(true);
+  };
+
+  const openCreate = () => {
+    setEditPolicyId(null);
+    setFormData({ title: '', content: '', version: '1.0', is_active: true });
+    setShowForm(!showForm);
   };
 
   return (
@@ -63,14 +92,14 @@ export default function AdminPolicies() {
           <h2 className="adm-workspace-title">Security Policies (ISMS)</h2>
           <p className="adm-workspace-desc">Manage organizational security policies and track employee acknowledgments.</p>
         </div>
-        <button className="adm-btn adm-btn-primary" onClick={() => setShowForm(!showForm)}>
-          <Plus size={14} /> Create Policy
+        <button className="adm-btn adm-btn-primary" onClick={openCreate}>
+          <Plus size={14} /> {showForm && !editPolicyId ? 'Cancel' : 'Create Policy'}
         </button>
       </div>
 
       {showForm && (
         <div className="adm-panel" style={{ marginBottom: '20px', padding: '20px' }}>
-          <h3>Publish New Policy</h3>
+          <h3>{editPolicyId ? 'Edit Policy' : 'Publish New Policy'}</h3>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '15px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
               <div>
@@ -86,21 +115,23 @@ export default function AdminPolicies() {
               <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '5px' }}>Policy Content</label>
               <textarea value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} required className="adm-input" placeholder="Markdown or plain text content..." rows={5} style={{ width: '100%', padding: '8px', background: '#0f1929', border: '1px solid #1e293b', color: '#fff', borderRadius: '4px' }}></textarea>
             </div>
-            <button type="submit" className="adm-btn adm-btn-primary" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
-              {submitting ? 'Publishing...' : 'Publish Policy'}
-            </button>
+            
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#cbd5e1' }}>
+              <input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} />
+              Is Active
+            </label>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="submit" className="adm-btn adm-btn-primary" disabled={submitting}>
+                {submitting ? 'Saving...' : 'Save Policy'}
+              </button>
+            </div>
           </form>
         </div>
       )}
 
       <div className="adm-panel" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: '#0f1929', padding: '5px 10px', borderRadius: '4px', border: '1px solid #1e293b', width: '300px' }}>
-            <Search size={14} style={{ color: '#64748b', marginRight: '10px' }} />
-            <input type="text" placeholder="Search policies..." style={{ background: 'transparent', border: 'none', color: '#f8fafc', outline: 'none', width: '100%', fontSize: '13px' }} />
-          </div>
-        </div>
-
         {error && <div style={{ color: '#ef4444', marginBottom: '15px' }}>{error}</div>}
 
         {loading ? (
@@ -139,7 +170,12 @@ export default function AdminPolicies() {
                     </td>
                     <td style={{ padding: '10px 8px', color: '#64748b' }}>{new Date(p.updated_at).toLocaleDateString()}</td>
                     <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                      <button className="adm-btn adm-btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }}>Edit</button>
+                      <button className="adm-btn adm-btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => openEdit(p)}>
+                        <Edit size={14} />
+                      </button>
+                      <button className="adm-btn adm-btn-ghost" style={{ padding: '4px 8px', fontSize: '11px', color: 'var(--red)' }} onClick={() => handleDelete(p.id)}>
+                        <Trash2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}

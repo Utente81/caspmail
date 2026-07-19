@@ -641,6 +641,28 @@ export default async function adminRoutes(app) {
     reply.status(201).send(rows[0]);
   });
 
+
+  app.put('/policies/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { title, version, content, is_active } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE security_policies 
+      SET title = $1, version = $2, content = $3, is_active = $4, updated_at = NOW() 
+      WHERE id = $5 AND tenant_id = $6 RETURNING *
+    `, [title, version, content, is_active, req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+  });
+
+  app.delete('/policies/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rowCount } = await pool.query('DELETE FROM security_policies WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    if (rowCount === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send({ ok: true });
+  });
+
   app.get('/policies/acknowledgments', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });

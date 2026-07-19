@@ -5,43 +5,45 @@ metadata:
   namespace: caspermail
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: transit-vault
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
         app: transit-vault
     spec:
-      nodeSelector:
-        tier: "secure-data"
-      tolerations:
-      - key: "secure-data"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
       containers:
-      - name: vault
-        image: hashicorp/vault:1.15.2
-        args: ["server"]
+      - args:
+        - server
         env:
         - name: VAULT_LOCAL_CONFIG
-          value: '{"storage":{"file":{"path":"/vault/file"}},"ui":true}'
+          value: '{"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"storage":{"file":{"path":"/vault/file"}},"ui":true}'
+        image: hashicorp/vault:1.15.2
+        name: vault
         ports:
         - containerPort: 8200
         securityContext:
           capabilities:
-            add: ["IPC_LOCK"]
+            add:
+            - IPC_LOCK
         volumeMounts:
-        - name: vault-data
-          mountPath: /vault/file
+        - mountPath: /vault/file
+          name: vault-data
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - effect: NoSchedule
+        key: secure-data
+        operator: Equal
+        value: 'true'
       volumes:
-      - name: vault-data
-        hostPath:
+      - hostPath:
           path: /opt/transit-vault/data
           type: DirectoryOrCreate
+        name: vault-data
 ---
 apiVersion: v1
 kind: Service
@@ -49,9 +51,9 @@ metadata:
   name: transit-vault
   namespace: caspermail
 spec:
-  selector:
-    app: transit-vault
   ports:
   - port: 8200
     targetPort: 8200
+  selector:
+    app: transit-vault
   type: ClusterIP

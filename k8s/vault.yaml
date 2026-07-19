@@ -46,9 +46,8 @@ spec:
     spec:
       containers:
       - command:
-        - vault
-        - server
-        - -config=/vault/config/vault.json
+        - sleep
+        - '3600'
         env:
         - name: VAULT_TOKEN
           valueFrom:

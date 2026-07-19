@@ -807,6 +807,50 @@ export default async function adminRoutes(app) {
     reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
+
+  // ─── GRC: Aliases ─────────────────────────────────────────────────────────
+  app.get('/aliases', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rows } = await pool.query('SELECT * FROM organization_aliases WHERE tenant_id = $1 ORDER BY created_at DESC', [tenantId]);
+    reply.send({ data: rows });
+  });
+
+  app.post('/aliases', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { alias_email, members } = req.body;
+    try {
+      const { rows } = await pool.query(`
+        INSERT INTO organization_aliases (id, tenant_id, alias_email, members, created_at)
+        VALUES ($1, $2, $3, $4, NOW()) RETURNING *
+      `, [uuidv4(), tenantId, alias_email, JSON.stringify(members)]);
+      reply.status(201).send(rows[0]);
+    } catch (e) {
+      if (e.code === '23505') return reply.status(400).send({ error: 'Alias already exists' });
+      throw e;
+    }
+  });
+
+  app.put('/aliases/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { members } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE organization_aliases SET members = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *
+    `, [JSON.stringify(members), req.params.id, tenantId]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+  });
+
+  app.delete('/aliases/:id', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
+    const { rowCount } = await pool.query('DELETE FROM organization_aliases WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
+    if (rowCount === 0) return reply.status(404).send({ error: 'Not found' });
+    reply.send({ ok: true });
+  });
+
   // 🛡️ Audit Log 🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️────────────────────────────────────────────────────────────
 
   app.get('/audit', adminGuard, async (req, reply) => {

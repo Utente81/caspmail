@@ -28,7 +28,7 @@ spec:
               mountPath: /tmp/quarkus
       containers: # nosemgrep
         - name: keycloak
-          image: ghcr.io/utente81/caspmail-keycloak:e02ca8b33f17bc8bb9ed355928eee9b46cd07614
+          image: ghcr.io/utente81/caspmail-keycloak:17a9bd31022bcd82063b68af2d2f9176794a9b2d
           imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:

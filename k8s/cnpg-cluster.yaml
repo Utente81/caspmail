@@ -1,5 +1,3 @@
-
----
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
@@ -23,54 +21,43 @@ metadata:
   name: casper-cnpg
   namespace: caspermail
 spec:
-  instances: 3
   affinity:
     nodeSelector:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: tier
-          operator: In
-          values:
-          - secure-data
-  tolerations:
-  - key: "secure-data"
-    operator: "Equal"
-    value: "true"
-    effect: "NoSchedule"
-  
-  postgresql:
-    syncReplicaElectionConstraint:
-      enabled: false
-
-  bootstrap:
-    initdb:
-      database: caspermail
-      owner: caspermail
-      secret:
-        name: cnpg-app-secret
-
-  storage:
-    size: 2Gi
-  
-  walStorage:
-    size: 1Gi
-
+      tier: secure-data
+    tolerations:
+    - effect: NoSchedule
+      key: secure-data
+      operator: Equal
+      value: 'true'
   backup:
     barmanObjectStore:
       destinationPath: s3://pg-backup/
       endpointURL: http://minio.caspermail.svc.cluster.local:9000
       s3Credentials:
         accessKeyId:
-          name: cnpg-minio-creds
           key: ACCESS_KEY_ID
-        secretAccessKey:
           name: cnpg-minio-creds
+        secretAccessKey:
           key: ACCESS_SECRET_KEY
+          name: cnpg-minio-creds
       wal:
         compression: gzip
         maxParallel: 1
-    retentionPolicy: "30d"
-
+    retentionPolicy: 30d
+  bootstrap:
+    initdb:
+      database: caspermail
+      owner: caspermail
+      secret:
+        name: cnpg-app-secret
+  instances: 3
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  storage:
+    size: 2Gi
+  walStorage:
+    size: 1Gi
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
@@ -78,7 +65,7 @@ metadata:
   name: casper-cnpg-daily-backup
   namespace: caspermail
 spec:
-  schedule: "0 0 2 * * *"
   backupOwnerReference: self
   cluster:
     name: casper-cnpg
+  schedule: 0 0 2 * * *

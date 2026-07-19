@@ -37,8 +37,6 @@ spec:
   selector:
     matchLabels:
       app: vault
-  strategy:
-    type: Recreate
   template:
     metadata:
       labels:

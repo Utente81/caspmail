@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transit-vault-data
+  namespace: caspermail
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,10 +53,9 @@ spec:
         operator: Equal
         value: 'true'
       volumes:
-      - hostPath:
-          path: /opt/transit-vault/data
-          type: DirectoryOrCreate
-        name: vault-data
+      - name: vault-data
+        persistentVolumeClaim:
+          claimName: transit-vault-data
 ---
 apiVersion: v1
 kind: Service

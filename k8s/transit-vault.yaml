@@ -33,7 +33,8 @@ spec:
         - server
         env:
         - name: VAULT_LOCAL_CONFIG
-          value: '{"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"storage":{"file":{"path":"/vault/file"}},"ui":true}'
+          value: '{"listener": {"tcp": {"address": "0.0.0.0:8200", "tls_disable":
+            1}}, "storage": {"raft": {"path": "/vault/file"}}, "ui": true}'
         image: hashicorp/vault:1.15.2
         name: vault
         ports:

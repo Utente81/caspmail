@@ -4,6 +4,13 @@ metadata:
   name: minio-pvc
   namespace: caspermail
 spec:
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - key: "secure-data"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
   accessModes:
     - ReadWriteOnce
   resources:
@@ -16,6 +23,13 @@ metadata:
   name: minio
   namespace: caspermail
 spec:
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - key: "secure-data"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
   replicas: 1
   selector:
     matchLabels:
@@ -25,6 +39,13 @@ spec:
       labels:
         app: minio
     spec:
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - key: "secure-data"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
       containers: # nosemgrep
         - name: minio
           image: minio/minio:latest
@@ -60,6 +81,13 @@ metadata:
   name: minio
   namespace: caspermail
 spec:
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - key: "secure-data"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
   ports:
     - name: api
       port: 9000

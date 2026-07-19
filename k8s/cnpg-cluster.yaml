@@ -24,6 +24,19 @@ metadata:
   namespace: caspermail
 spec:
   instances: 3
+  affinity:
+    nodeSelector:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: tier
+          operator: In
+          values:
+          - secure-data
+  tolerations:
+  - key: "secure-data"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
   
   postgresql:
     syncReplicaElectionConstraint:

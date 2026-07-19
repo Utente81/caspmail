@@ -6,6 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: longhorn
   resources:
     requests:
       storage: 1Gi
@@ -59,6 +60,13 @@ spec:
       labels:
         app: vault
     spec:
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+        - key: "secure-data"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
       containers: # nosemgrep
         - name: vault
           image: hashicorp/vault:1.15

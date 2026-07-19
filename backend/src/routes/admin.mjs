@@ -609,7 +609,7 @@ export default async function adminRoutes(app) {
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { status } = req.body;
     const { rows } = await pool.query(`
-      UPDATE dsr_requests SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *
+      UPDATE dsr_requests SET status = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *
     `, [status, req.params.id, tenantId]);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
 
@@ -648,7 +648,7 @@ export default async function adminRoutes(app) {
     const { title, version, content, is_active } = req.body;
     const { rows } = await pool.query(`
       UPDATE security_policies 
-      SET title = $1, version = $2, content = $3, is_active = $4, updated_at = NOW() 
+      SET title = $1, version = $2, content = $3, is_active = $4 
       WHERE id = $5 AND tenant_id = $6 RETURNING *
     `, [title, version, content, is_active, req.params.id, tenantId]);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });

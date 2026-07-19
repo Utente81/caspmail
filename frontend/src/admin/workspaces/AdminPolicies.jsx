@@ -168,7 +168,7 @@ export default function AdminPolicies() {
                         {p.is_active ? 'Active' : 'Draft'}
                       </span>
                     </td>
-                    <td style={{ padding: '10px 8px', color: '#64748b' }}>{new Date(p.updated_at).toLocaleDateString()}</td>
+                    <td style={{ padding: '10px 8px', color: '#64748b' }}>{new Date(p.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: '10px 8px', textAlign: 'right' }}>
                       <button className="adm-btn adm-btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => openEdit(p)}>
                         <Edit size={14} />

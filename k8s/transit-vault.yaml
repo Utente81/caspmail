@@ -28,7 +28,7 @@ spec:
         args: ["server"]
         env:
         - name: VAULT_LOCAL_CONFIG
-          value: '{"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"storage":{"file":{"path":"/vault/file"}},"ui":true}'
+          value: '{"storage":{"file":{"path":"/vault/file"}},"ui":true}'
         ports:
         - containerPort: 8200
         securityContext:

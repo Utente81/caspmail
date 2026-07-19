@@ -38,16 +38,11 @@ html, body, html.login-pf, body.login-pf {
   width: 100% !important;
   max-width: 420px !important;
   margin: 0 !important;
-  background: rgba(15, 20, 40, 0.55) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 20px !important;
+  background: transparent !important;
+  border: none !important;
   padding: 48px 40px !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7) !important;
-  /*backdrop-filter: blur(28px) !important;
-  -webkit-backdrop-filter: blur(28px) !important;*/
-  
-  /* Safe text colors */
-  color: #000 !important; 
+  box-shadow: none !important;
+  color: #e2e8f0 !important; 
   position: relative;
   z-index: 20 !important;
 }

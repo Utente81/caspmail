@@ -35,6 +35,10 @@ spec:
         - name: VAULT_LOCAL_CONFIG
           value: '{"listener": {"tcp": {"address": "0.0.0.0:8200", "tls_disable":
             1}}, "storage": {"raft": {"path": "/vault/file"}}, "ui": true}'
+        - name: VAULT_API_ADDR
+          value: http://transit-vault.caspermail.svc.cluster.local:8200
+        - name: VAULT_CLUSTER_ADDR
+          value: http://transit-vault.caspermail.svc.cluster.local:8201
         image: hashicorp/vault:1.15.2
         name: vault
         ports:

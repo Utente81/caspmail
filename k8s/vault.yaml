@@ -5,51 +5,32 @@ metadata:
   namespace: caspermail
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: longhorn
+  - ReadWriteOnce
   resources:
     requests:
       storage: 1Gi
 ---
 apiVersion: v1
+data:
+  vault.json: "{\n  \"listener\": {\n    \"tcp\": {\n      \"address\": \"0.0.0.0:8200\"\
+    ,\n      \"tls_disable\": 1\n    }\n  },\n  \"storage\": {\n    \"file\": {\n\
+    \      \"path\": \"/vault/file\"\n    }\n  },\n  \"seal\": {\n    \"transit\"\
+    : {\n      \"address\": \"http://192.168.189.203:30000\",\n      \"disable_renewal\"\
+    : \"false\",\n      \"key_name\": \"autounseal\",\n      \"mount_path\": \"transit\"\
+    ,\n      \"tls_skip_verify\": \"true\"\n    }\n  },\n  \"ui\": true,\n  \"disable_mlock\"\
+    : true\n}\n"
 kind: ConfigMap
 metadata:
   name: vault-config
   namespace: caspermail
-data:
-  vault.json: |
-    {
-      "listener": {
-        "tcp": {
-          "address": "0.0.0.0:8200",
-          "tls_disable": 1
-        }
-      },
-      "storage": {
-        "file": {
-          "path": "/vault/file"
-        }
-      },
-      "seal": {
-        "transit": {
-          "address": "http://192.168.189.203:30000",
-          "disable_renewal": "false",
-          "key_name": "autounseal",
-          "mount_path": "transit",
-          "tls_skip_verify": "true"
-        }
-      },
-      "ui": true,
-      "disable_mlock": true
-    }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: casper-vault
-  namespace: caspermail
   labels:
     app: vault
+  name: casper-vault
+  namespace: caspermail
 spec:
   replicas: 1
   selector:
@@ -60,41 +41,45 @@ spec:
       labels:
         app: vault
     spec:
+      containers:
+      - command:
+        - vault
+        - server
+        - -config=/vault/config/vault.json
+        env:
+        - name: VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: vault-unseal-token
+        image: hashicorp/vault:1.15
+        name: vault
+        ports:
+        - containerPort: 8200
+          name: http
+        securityContext:
+          capabilities:
+            add:
+            - IPC_LOCK
+        volumeMounts:
+        - mountPath: /vault/config
+          name: config
+        - mountPath: /vault/file
+          name: data
       nodeSelector:
         tier: secure-data
       tolerations:
-        - key: "secure-data"
-          operator: "Equal"
-          value: "true"
-          effect: "NoSchedule"
-      containers: # nosemgrep
-        - name: vault
-          image: hashicorp/vault:1.15
-          command: ["vault", "server", "-config=/vault/config/vault.json"]
-          env:
-            - name: VAULT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: vault-unseal-token
-                  key: token
-          ports:
-            - containerPort: 8200
-              name: http
-          securityContext:
-            capabilities:
-              add: ["IPC_LOCK"]
-          volumeMounts:
-            - name: config
-              mountPath: /vault/config
-            - name: data
-              mountPath: /vault/file
+      - effect: NoSchedule
+        key: secure-data
+        operator: Equal
+        value: 'true'
       volumes:
-        - name: config
-          configMap:
-            name: vault-config
-        - name: data
-          persistentVolumeClaim:
-            claimName: vault-data
+      - configMap:
+          name: vault-config
+        name: config
+      - name: data
+        persistentVolumeClaim:
+          claimName: vault-data
 ---
 apiVersion: v1
 kind: Service
@@ -102,8 +87,8 @@ metadata:
   name: casper-vault
   namespace: caspermail
 spec:
+  ports:
+  - port: 8200
+    targetPort: 8200
   selector:
     app: vault
-  ports:
-    - port: 8200
-      targetPort: 8200

@@ -4,15 +4,8 @@ metadata:
   name: minio-pvc
   namespace: caspermail
 spec:
-      nodeSelector:
-        tier: secure-data
-      tolerations:
-      - key: "secure-data"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
   resources:
     requests:
       storage: 10Gi
@@ -23,13 +16,6 @@ metadata:
   name: minio
   namespace: caspermail
 spec:
-      nodeSelector:
-        tier: secure-data
-      tolerations:
-      - key: "secure-data"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
   replicas: 1
   selector:
     matchLabels:
@@ -39,41 +25,41 @@ spec:
       labels:
         app: minio
     spec:
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - minio server /data --console-address ":9001"
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              key: minio_root_user
+              name: casper-secrets
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: minio_root_password
+              name: casper-secrets
+        image: minio/minio:latest
+        name: minio
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        volumeMounts:
+        - mountPath: /data
+          name: minio-data
       nodeSelector:
         tier: secure-data
       tolerations:
-      - key: "secure-data"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
-      containers: # nosemgrep
-        - name: minio
-          image: minio/minio:latest
-          command:
-            - /bin/sh
-            - -c
-            - minio server /data --console-address ":9001"
-          env:
-            - name: MINIO_ROOT_USER
-              valueFrom:
-                secretKeyRef:
-                  name: casper-secrets
-                  key: minio_root_user
-            - name: MINIO_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: casper-secrets
-                  key: minio_root_password
-          ports:
-            - containerPort: 9000
-            - containerPort: 9001
-          volumeMounts:
-            - name: minio-data
-              mountPath: /data
+      - effect: NoSchedule
+        key: secure-data
+        operator: Equal
+        value: 'true'
       volumes:
-        - name: minio-data
-          persistentVolumeClaim:
-            claimName: minio-pvc
+      - name: minio-data
+        persistentVolumeClaim:
+          claimName: minio-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -81,19 +67,12 @@ metadata:
   name: minio
   namespace: caspermail
 spec:
-      nodeSelector:
-        tier: secure-data
-      tolerations:
-      - key: "secure-data"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
   ports:
-    - name: api
-      port: 9000
-      targetPort: 9000
-    - name: console
-      port: 9001
-      targetPort: 9001
+  - name: api
+    port: 9000
+    targetPort: 9000
+  - name: console
+    port: 9001
+    targetPort: 9001
   selector:
     app: minio

@@ -21,7 +21,7 @@ export default async function mailRoutes(app) {
       const tenant = 'caspmail';
       try {
         const res = await pool.query(
-          `INSERT INTO users (tenant_id, email, name) VALUES ($1, $2, $3) RETURNING *`,
+          `INSERT INTO users (tenant_id, email, name, quota_mb) VALUES ($1, $2, $3, 500) RETURNING *`,
           [tenant, email, name]
         );
         rows = res.rows;

@@ -33,11 +33,11 @@ export default function AdminUsers() {
   const [filter, setFilter] = useState('')
   const [tenantFilter, setTenantFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
-  const [form, setForm] = useState({ tenant_id: '', email: '', name: '', role: 'user', quota_mb: 1024, password: '' })
+  const [form, setForm] = useState({ tenant_id: '', email: '', name: '', role: 'user', quota_mb: 500, password: '' })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState(null)
   const [editUser, setEditUser] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', role: 'user', quota_mb: 1024, status: 'active', password: '', legal_hold: false })
+  const [editForm, setEditForm] = useState({ name: '', role: 'user', quota_mb: 500, status: 'active', password: '', legal_hold: false })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState(null)
   const [revoking, setRevoking] = useState(false)
@@ -77,7 +77,7 @@ export default function AdminUsers() {
         : [user, ...r]
       )
       setShowNew(false)
-      setForm({ tenant_id: '', email: '', name: '', role: 'user', quota_mb: 1024, password: '' })
+      setForm({ tenant_id: '', email: '', name: '', role: 'user', quota_mb: 500, password: '' })
     } catch (e) { setFormError(e.message) }
     finally { setSaving(false) }
   }

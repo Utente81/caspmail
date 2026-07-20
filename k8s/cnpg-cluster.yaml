@@ -32,14 +32,14 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: s3://pg-backup/
-      endpointURL: http://minio.caspermail.svc.cluster.local:9000
+      endpointURL: http://192.168.20.150:9000
       s3Credentials:
         accessKeyId:
           key: ACCESS_KEY_ID
-          name: cnpg-minio-creds
+          name: freenas-secrets
         secretAccessKey:
           key: ACCESS_SECRET_KEY
-          name: cnpg-minio-creds
+          name: freenas-secrets
       wal:
         compression: gzip
         maxParallel: 1

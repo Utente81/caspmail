@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stalwart-config
+  namespace: caspermail
+data:
+  stalwart.toml: |
+    [server]
+    hostname =  mail.caspmail.com
+    
+    [store.db]
+    type = rocksdb
+    path = /opt/stalwart/data
+
+    [auth.default]
+    type = internal
+
+    [session.smtp.default]
+    auth-require = false
+    
+    [directory.default]
+    type = internal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stalwart-mail
+  namespace: caspermail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stalwart-mail
+  template:
+    metadata:
+      labels:
+        app: stalwart-mail
+    spec:
+      containers:
+      - name: stalwart
+        image: stalwartlabs/mail-server:latest
+        ports:
+        - containerPort: 25
+          name: smtp
+        - containerPort: 587
+          name: submission
+        - containerPort: 465
+          name: smtps
+        - containerPort: 143
+          name: imap
+        - containerPort: 993
+          name: imaps
+        - containerPort: 8080
+          name: jmap
+        env:
+        - name: STALWART_ADMIN_PASSWORD
+          value: admin_secure_password_123
+        volumeMounts:
+        - name: stalwart-data-ram
+          mountPath: /opt/stalwart/data
+        - name: stalwart-config-volume
+          mountPath: /opt/stalwart/etc/stalwart.toml
+          subPath: stalwart.toml
+      volumes:
+      - name: stalwart-data-ram
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      - name: stalwart-config-volume
+        configMap:
+          name: stalwart-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stalwart-service
+  namespace: caspermail
+spec:
+  type: LoadBalancer
+  selector:
+    app: stalwart-mail
+  ports:
+  - name: smtp
+    port: 25
+    targetPort: 25
+  - name: submission
+    port: 587
+    targetPort: 587
+  - name: smtps
+    port: 465
+    targetPort: 465
+  - name: imap
+    port: 143
+    targetPort: 143
+  - name: imaps
+    port: 993
+    targetPort: 993
+  - name: jmap
+    port: 8080
+    targetPort: 8080

@@ -8,7 +8,7 @@ CasperMail is a military-grade, next-generation enterprise communication and sec
 ---
 
 ## 💖 Support the Project
-CasperMail is built on an **Open-Core** model. If you use CasperMail in your daily operations, please consider supporting its development.
+CasperMail is a highly specialized Enterprise product. If you wish to support our R&D or partner with us for a PoC, please get in touch or sponsor our public research.
 👉 **[Sponsor us on GitHub](https://github.com/sponsors/tuo-username)**
 
 ---
@@ -74,7 +74,5 @@ CasperMail is designed for seamless, automated deployment via **ArgoCD**.
 
 ---
 
-## ⚖️ License & Open-Core Model
-CasperMail operates on an **Open-Core** model:
-- **Community Edition (This Repository)**: Open-source core functionality. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get involved.
-- **Enterprise Edition**: Proprietary features including Vault KMS, HA deployments, and SIEM exports. Designed for Enterprise compliance (NIS2, GDPR, ISO 27001). All rights reserved for Enterprise components.
+## ⚖️ License
+Confidential and Proprietary. All rights reserved. Designed for Enterprise compliance (NIS2, GDPR, ISO 27001).

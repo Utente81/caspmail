@@ -2,25 +2,14 @@
 
 First off, thank you for considering contributing to CasperMail! It's people like you that make CasperMail such a great tool for secure, military-grade communication.
 
-## 🌟 The Open-Core Model
+## 🌟 Enterprise Codebase
 
-CasperMail operates on an **Open-Core** model. This means that the core functionality is open-source and free to use (Community Edition), while advanced features tailored for large organizations are part of our commercial offering (Enterprise Edition).
+CasperMail is a highly secure, proprietary Enterprise Suite. We welcome bug reports and feature requests from our partners and users, but we currently do not accept unsolicited pull requests that modify core security components without prior architectural approval.
 
-### What belongs in the Community Edition?
-- Core email client functionality.
-- Basic end-to-end encryption.
-- Standard authentication (Username/Password + Basic 2FA).
-- Single-node PostgreSQL database setup.
-- Basic UI/UX.
-
-### What is reserved for the Enterprise Edition?
-*Please do not submit PRs for these features, as they are maintained in a private repository:*
-- HashiCorp Vault integrations (Dynamic Secrets, HA KMS).
-- Enterprise SIEM integrations (Splunk, QRadar webhooks).
-- 3D Threat Map and SOAR Playbooks.
-- Advanced DLP (Data Loss Prevention) rules.
-- High Availability (HA) Kubernetes operators (CloudNativePG clustering).
-- SSO/SAML integrations for corporate Identity Providers.
+### Code Constraints
+- All cryptography changes must be vetted against our FIPS 140-2 compliance checklist.
+- Vault integration secrets must never be mocked in production.
+- Do not submit PRs for SIEM exporters without consulting the SOC mapping guidelines.
 
 ---
 

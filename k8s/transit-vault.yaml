@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transit-vault-data
+  namespace: caspermail
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transit-vault
+  namespace: caspermail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transit-vault
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: transit-vault
+    spec:
+      containers:
+      - args:
+        - server
+        env:
+        - name: VAULT_LOCAL_CONFIG
+          value: '{"listener": {"tcp": {"address": "0.0.0.0:8200", "tls_disable":
+            1}}, "storage": {"file": {"path": "/vault/file"}}, "ui": true}'
+        image: hashicorp/vault:1.15.2
+        name: vault
+        ports:
+        - containerPort: 8200
+        securityContext:
+          capabilities:
+            add:
+            - IPC_LOCK
+        volumeMounts:
+        - mountPath: /vault/file
+          name: vault-data
+      nodeSelector:
+        tier: secure-data
+      tolerations:
+      - effect: NoSchedule
+        key: secure-data
+        operator: Equal
+        value: 'true'
+      volumes:
+      - name: vault-data
+        persistentVolumeClaim:
+          claimName: transit-vault-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transit-vault
+  namespace: caspermail
+spec:
+  ports:
+  - port: 8200
+    targetPort: 8200
+  selector:
+    app: transit-vault
+  type: ClusterIP

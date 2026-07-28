@@ -1,0 +1,35 @@
+name: Docker Security & Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  docker-build-and-scan:
+    name: Docker Build & Trivy Scan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [ 'frontend', 'backend' ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          persist-credentials: false
+
+      - name: Build Docker Image
+        run: |
+          cd ${{ matrix.component }}
+          docker build -t caspermail-${{ matrix.component }}:${{ github.sha }} .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@c07df6fec6fa692e6fd1200d50aaa1fdd66f03c8 # v0.23.0 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          image-ref: caspermail-${{ matrix.component }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

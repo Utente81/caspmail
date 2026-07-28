@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: casper-vault-internal
+  namespace: caspermail
+  labels:
+    app: vault
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: http
+      port: 8200
+      targetPort: 8200
+    - name: server
+      port: 8201
+      targetPort: 8201
+  selector:
+    app: vault

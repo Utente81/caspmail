@@ -1,0 +1,420 @@
+/* CaspMail — Login page (Antigravity Space Theme) */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  /* Sfondo galassia reale */
+  background: rgba(0, 0, 0, 1);
+  /*background-image: url('/galaxy-bg.jpg');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;*/
+  /* Overlay scuro per mantenere leggibilità */
+  /*background-color: #03030a;*/
+  color: #f1f5f9;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+}
+
+.login-shell {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Space Background & Orbs ── */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  z-index: -1;
+  animation: float 25s infinite ease-in-out alternate;
+  opacity: 0.6;
+}
+.orb-1 {
+  width: 50vw; height: 50vw;
+  background: rgba(14, 165, 233, 0.25);
+  top: -10%; left: -20%;
+}
+.orb-2 {
+  width: 60vw; height: 60vw;
+  background: rgba(139, 92, 246, 0.2);
+  bottom: -20%; right: -10%;
+  animation-delay: -5s;
+}
+.orb-3 {
+  width: 40vw; height: 40vw;
+  background: rgba(236, 72, 153, 0.15);
+  top: 40%; left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -10s;
+}
+.orb-4 {
+  width: 30vw; height: 30vw;
+  background: rgba(16, 185, 129, 0.15);
+  bottom: 10%; left: 10%;
+  animation-delay: -7s;
+}
+
+/* ── Stars Layer (intermittenti, 4 varianti) ── */
+.stars-layer {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px 2px rgba(255,255,255,0.8);
+}
+/* 4 varianti di twinkle con timing diversi per effetto naturale */
+.star:nth-child(4n+1)   { animation: twinkleA 2.5s infinite alternate ease-in-out; }
+.star:nth-child(4n+2)   { animation: twinkleB 3.8s infinite alternate ease-in-out; }
+.star:nth-child(4n+3)   { animation: twinkleC 5.1s infinite alternate ease-in-out; }
+.star:nth-child(4n+4)   { animation: twinkleD 1.9s infinite alternate ease-in-out; }
+
+@keyframes twinkleA {
+  0%   { opacity: 0.05; transform: scale(0.6); box-shadow: 0 0 3px rgba(255,255,255,0.3); }
+  100% { opacity: 1;    transform: scale(1.3); box-shadow: 0 0 12px 3px rgba(200,220,255,0.9); }
+}
+@keyframes twinkleB {
+  0%   { opacity: 0.8;  transform: scale(1.1); box-shadow: 0 0 8px rgba(255,255,255,0.7); }
+  100% { opacity: 0.1;  transform: scale(0.5); box-shadow: 0 0 2px rgba(255,255,255,0.2); }
+}
+@keyframes twinkleC {
+  0%   { opacity: 0.3;  transform: scale(0.8); box-shadow: 0 0 4px rgba(180,200,255,0.4); }
+  50%  { opacity: 1;    transform: scale(1.4); box-shadow: 0 0 14px 4px rgba(180,200,255,1); }
+  100% { opacity: 0.2;  transform: scale(0.7); box-shadow: 0 0 3px rgba(180,200,255,0.3); }
+}
+@keyframes twinkleD {
+  0%   { opacity: 1;    transform: scale(1.2); }
+  40%  { opacity: 0.05; transform: scale(0.4); }
+  100% { opacity: 0.9;  transform: scale(1.0); }
+}
+
+@keyframes float {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(40px, -40px) scale(1.05); }
+  100% { transform: translate(-30px, 30px) scale(0.95); }
+}
+
+/* ── Main Glassmorphism Card ── */
+.login-card {
+  width: 100%;
+  max-width: 800px;
+  background: rgba(15, 20, 40, 0);
+  /*backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);*/
+  border-radius: 28px;
+  padding: 56px 48px;
+  position: relative;
+  overflow: visible; /* Permette alla luna di sporgere dalla card */
+  z-index: 10;
+  
+  /* Simulated glowing border via shadows */
+  /*box-shadow: 
+    inset 0 0 0 2px rgba(255, 255, 255, 0.1),
+    0 0 0 2px rgba(14, 165, 233, 0.2), /* Cyan edge */
+    /*0 0 0 4px rgba(139, 92, 246, 0.15), /* Purple edge */
+    /*0 24px 64px rgba(0, 0, 0, 0.8),
+    /*0 0 80px rgba(139, 92, 246, 0.2); /* Outer glow */
+    
+  animation: cardEnter 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  transform: translateY(30px);
+}
+
+@keyframes cardEnter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Header ── */
+.login-header {
+  text-align: center;
+  margin-bottom: 48px;
+  animation: fadeIn 1s 0.3s forwards;
+  opacity: 0;
+}
+.login-sub-title {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+.login-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+  text-shadow: 0 4px 20px rgba(255, 255, 255, 0.2);
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+/* ── App Grid (Responsive) ── */
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.app-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  text-decoration: none;
+  font-family: inherit;
+  color: inherit;
+  animation: fadeInUp 0.6s backwards;
+}
+
+.app-card:nth-child(1) { animation-delay: 0.4s; }
+.app-card:nth-child(2) { animation-delay: 0.5s; }
+.app-card:nth-child(3) { animation-delay: 0.6s; }
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Top colored glowing border for the card */
+.app-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 3px;
+  background: var(--app-color);
+  box-shadow: 0 0 15px var(--app-color);
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
+/* Hover FX */
+.app-card:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255,255,255,0.2);
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.6), 
+    inset 0 0 40px var(--app-dim);
+  transform: translateY(-6px) scale(1.02);
+}
+.app-card:hover:not(:disabled)::before {
+  opacity: 1;
+  box-shadow: 0 0 25px var(--app-color);
+}
+.app-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app-icon-wrap {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: var(--app-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-color);
+  margin-bottom: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: all 0.4s;
+}
+.app-card:hover:not(:disabled) .app-icon-wrap {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px var(--app-dim);
+  background: var(--app-color);
+  color: #fff;
+  border-color: transparent;
+}
+
+.app-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+.app-desc {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.login-spinner {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  animation: loginSpin 0.7s infinite cubic-bezier(0.5, 0, 0.5, 1);
+}
+@keyframes loginSpin { to { transform: rotate(360deg); } }
+
+/* ── Planet (rotazione asse sagittale, enorme in background) ── */
+.moon-orbit {
+  position: absolute;
+  /*right: -250px;*/
+  top: 50%;
+  transform: translateY(-50%);
+  width: 600px;
+  height: 600px;
+  z-index: 1; /* Dietro la card che ha z-index 10 */
+  pointer-events: none;
+}
+
+/* Sfera del pianeta: overflow hidden per clippare la texture */
+.moon {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  /* Bagliore viola atmosferico molto intenso per dimensioni enormi */
+  box-shadow:
+    0 0 100px rgba(130, 80, 255, 0.4),
+    0 0 250px rgba(80, 50, 200, 0.2);
+}
+
+/* TEXTURE superficiale: larga 200%, scorre orizzontalmente → rotazione Y */
+.moon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  background: 
+    /* Crateri enormi scuri per evidenziare la rotazione (duplicati a +50% per il loop) */
+    radial-gradient(circle at 10% 30%, rgba(0,0,0,0.6) 0%, transparent 15%),
+    radial-gradient(circle at 60% 30%, rgba(0,0,0,0.6) 0%, transparent 15%),
+    
+    /* Tempeste chiare luminose */
+    radial-gradient(circle at 35% 65%, rgba(255,255,255,0.15) 0%, transparent 12%),
+    radial-gradient(circle at 85% 65%, rgba(255,255,255,0.15) 0%, transparent 12%),
+    
+    /* Crateri secondari */
+    radial-gradient(circle at 20% 75%, rgba(0,0,0,0.5) 0%, transparent 10%),
+    radial-gradient(circle at 70% 75%, rgba(0,0,0,0.5) 0%, transparent 10%),
+    
+    /* Onde verticali per texture di base (stile gas giant) */
+    repeating-linear-gradient(
+      to right,
+      #3d1f6e 0%,
+      #5a3296 5%,
+      #2a1050 10%,
+      #4a2880 15%,
+      #1e0c40 20%,
+      #7248b0 25%,
+      #3d1f6e 30%,
+      #5a3296 35%,
+      #2a1050 40%,
+      #4a2880 45%,
+      #3d1f6e 50%
+    );
+  background-size: 100% 100%;
+  animation: planet-surface 45s linear infinite;
+}
+
+/* SHADING 3D fisso (luce a sx e ombra a dx non ruotano con la superficie) */
+.moon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    /* Luce principale sulla sinistra */
+    radial-gradient(circle at 25% 30%,
+      rgba(255, 255, 255, 0.25) 0%,
+      rgba(200, 170, 255, 0.1) 30%,
+      transparent 55%
+    ),
+    /* Ombra profonda sulla destra per la curvatura sferica 3D */
+    radial-gradient(circle at 75% 70%,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.6) 40%,
+      transparent 70%
+    ),
+    /* Bordo scuro globale */
+    radial-gradient(circle at 50% 50%,
+      transparent 65%,
+      rgba(0, 0, 0, 0.75) 100%
+    );
+  pointer-events: none;
+}
+
+@keyframes planet-surface {
+  from { transform: translateX(0%); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Anello planetario gigante separato (dietro il pianeta) */
+.planet-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1200px;
+  height: 250px;
+  margin-left: -600px;
+  margin-top: -125px;
+  border-radius: 50%;
+  border: 15px solid rgba(160, 120, 255, 0.18);
+  box-shadow:
+    0 0 40px rgba(160, 120, 255, 0.2),
+    inset 0 0 30px rgba(160, 120, 255, 0.15);
+  transform: rotateX(74deg) rotateY(-8deg);
+  z-index: -1;
+}
+
+/* ── Responsive Mobile ── */
+@media (max-width: 768px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .login-card {
+    padding: 40px 24px;
+    border-radius: 20px;
+  }
+  .login-title {
+    font-size: 1.8rem;
+  }
+  .moon-orbit {
+    display: none;
+  }
+}
+
+/* ── Galaxy Canvas Background ── */
+.galaxy-canvas-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}

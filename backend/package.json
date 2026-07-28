@@ -1,0 +1,44 @@
+{
+  "name": "caspermail-backend",
+  "version": "1.0.0",
+  "description": "CaspMail secure enterprise email + SOC backend",
+  "type": "module",
+  "main": "src/app.mjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/app.mjs",
+    "dev": "node --watch src/app.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/rate-limit": "^11.1.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.78.0",
+    "@opentelemetry/exporter-prometheus": "^0.220.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/sdk-node": "^0.220.0",
+    "body-parser": "^2.3.0",
+    "braces": "^3.0.3",
+    "cookie": "^2.0.1",
+    "cookie-signature": "^1.2.2",
+    "express": "^5.2.1",
+    "fastify": "^5.10.0",
+    "fastify-socket.io": "^4.0.0",
+    "ioredis": "^5.4.1",
+    "jose": "^5.9.3",
+    "jsonwebtoken": "^9.0.3",
+    "micromatch": "^4.0.8",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^9.0.3",
+    "path-to-regexp": "^8.4.2",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.12.0",
+    "send": "^1.2.1",
+    "socket.io": "^4.8.3",
+    "tar": "^7.5.20",
+    "uuid": "^14.0.1",
+    "yaml": "^2.9.0"
+  }
+}

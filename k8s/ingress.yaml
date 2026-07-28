@@ -1,0 +1,91 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: caspermail-caspermail-security-headers@kubernetescrd
+  name: caspermail-ingress
+  namespace: caspermail
+spec:
+  rules:
+  - host: caspmail.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+        path: /api
+        pathType: Prefix
+      - backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  - host: mail.caspmail.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+        path: /api
+        pathType: Prefix
+      - backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  - host: soc.caspmail.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: casper-backend
+            port:
+              number: 3000
+        path: /api
+        pathType: Prefix
+      - backend:
+          service:
+            name: casper-frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  - host: auth.caspmail.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: casper-keycloak
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  - host: db.caspmail.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: pgadmin
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - caspmail.com
+    - mail.caspmail.com
+    - soc.caspmail.com
+    - auth.caspmail.com
+    - db.caspmail.com
+    secretName: caspermail-tls-secret

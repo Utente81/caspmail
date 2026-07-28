@@ -1,0 +1,36 @@
+
+.is-editable .soc-panel { border: 2px dashed #3b82f6 !important; cursor: grab; opacity: 0.8; }
+.is-editable .soc-panel:active { cursor: grabbing; }
+
+.soc-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #ef4444;
+  color: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  z-index: 9999;
+  font-family: var(--font-inter, sans-serif);
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
+.soc-toast-success {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #22c55e;
+  color: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  z-index: 9999;
+  font-family: var(--font-inter, sans-serif);
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

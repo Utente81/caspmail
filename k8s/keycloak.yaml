@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: keycloak
+  name: casper-keycloak
+  namespace: caspermail
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - args:
+        - '/opt/keycloak/bin/kc.sh start
+
+          '
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL
+          value: jdbc:postgresql://casper-cnpg-rw:5432/caspermail
+        - name: KC_DB_USERNAME
+          value: caspermail
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: postgres_password
+              name: casper-secrets
+        - name: KEYCLOAK_ADMIN
+          value: admin
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: keycloak_admin_password
+              name: casper-secrets
+        - name: KC_HOSTNAME
+          value: https://auth.caspmail.com
+        - name: KC_HOSTNAME_STRICT
+          value: 'false'
+        - name: KC_HTTP_ENABLED
+          value: 'true'
+        - name: KC_HTTP_PORT
+          value: '8080'
+        - name: KC_PROXY_HEADERS
+          value: xforwarded
+        - name: KC_LOG_LEVEL
+          value: INFO
+        - name: KC_HEALTH_ENABLED
+          value: 'true'
+        - name: JGROUPS_DISCOVERY_PROTOCOL
+          value: dns.DNS_PING
+        - name: JGROUPS_DISCOVERY_PROPERTIES
+          value: dns_query=casper-keycloak-headless.caspermail.svc.cluster.local
+        image: ghcr.io/utente81/caspmail-keycloak:92564fd20735ee4399a7b752971a119778f29453
+        imagePullPolicy: Always
+        name: keycloak
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+        - mountPath: /opt/keycloak/data
+          name: data-volume
+        - mountPath: /opt/keycloak/lib/quarkus
+          name: quarkus-lib
+      imagePullSecrets:
+      - name: ghcr-login-secret
+      initContainers:
+      - command:
+        - /bin/sh
+        - -c
+        - cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/
+        image: quay.io/keycloak/keycloak:25.0
+        name: init-keycloak
+        securityContext:
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /tmp/quarkus
+          name: quarkus-lib
+      volumes:
+      - emptyDir: {}
+        name: tmp-volume
+      - emptyDir: {}
+        name: data-volume
+      - emptyDir: {}
+        name: quarkus-lib
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: casper-keycloak
+  namespace: caspermail
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: keycloak
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: 'true'
+  name: casper-keycloak-headless
+  namespace: caspermail
+spec:
+  clusterIP: None
+  ports:
+  - name: jgroups
+    port: 7600
+  - name: jgroups-fd
+    port: 57600
+  selector:
+    app: keycloak

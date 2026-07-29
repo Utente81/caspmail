@@ -49,7 +49,44 @@ data:
             "showCommonLabels": false,
             "wrapLogMessage": true,
             "sortOrder": "Descending"
+        },
+        {
+          "type": "logs",
+          "title": "Suspicious Activity & Failed Logins",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "{app=\"backend\"} |= \"SIEM_EVENT\" |~ \"failed|unauthorized|denied\"",
+              "refId": "B",
+              "datasource": {
+                "type": "loki",
+                "uid": "Loki"
+              }
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending"
           }
+        },
+        {
+          "type": "timeseries",
+          "title": "Authentication Failures Rate",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
+          "targets": [
+            {
+              "expr": "sum(rate({app=\"backend\"} |= \"SIEM_EVENT\" |= \"failed\" [5m]))",
+              "legendFormat": "Failed Attempts",
+              "refId": "C",
+              "datasource": {
+                "type": "loki",
+                "uid": "Loki"
+              }
+            }
+          ]
         }
       ]
     }

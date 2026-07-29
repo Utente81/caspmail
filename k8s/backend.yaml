@@ -67,7 +67,7 @@ spec:
           value: admin
         - name: SMTP_PASS
           value: admin_secure_password_123
-        image: ghcr.io/utente81/caspmail-backend:be2f06968363952b264d02252356d6ae452e7f01
+        image: ghcr.io/utente81/caspmail-backend:8d6dca0e124c725e3aeb641b2f38e8fb9599188d
         imagePullPolicy: IfNotPresent
         name: backend
         ports:
@@ -113,7 +113,7 @@ spec:
           /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1
           @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1
           && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/
-        image: ghcr.io/utente81/caspmail-backend:be2f06968363952b264d02252356d6ae452e7f01
+        image: ghcr.io/utente81/caspmail-backend:8d6dca0e124c725e3aeb641b2f38e8fb9599188d
         imagePullPolicy: IfNotPresent
         name: init-telemetry
         volumeMounts:

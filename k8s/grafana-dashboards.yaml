@@ -49,6 +49,7 @@ data:
             "showCommonLabels": false,
             "wrapLogMessage": true,
             "sortOrder": "Descending"
+          }
         },
         {
           "type": "logs",

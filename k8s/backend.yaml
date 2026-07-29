@@ -47,6 +47,11 @@ spec:
           value: caspermail
         - name: KEYCLOAK_ADMIN_USER
           value: admin
+        - name: SIEM_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: casper-secrets
+              key: siem_secret
         - name: VAULT_TOKEN
           valueFrom:
             secretKeyRef:

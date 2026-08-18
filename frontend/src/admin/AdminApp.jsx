@@ -70,9 +70,12 @@ export default function AdminApp() {
           window.history.replaceState({}, '', '/console/admin')
         }
 
-        const token = sessionStorage.getItem(STORAGE_KEY)
-        if (!token) {
-          await startLogin()
+        let token = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY)
+        if (token) {
+          sessionStorage.setItem(STORAGE_KEY, token)
+          localStorage.setItem(STORAGE_KEY, token)
+        } else {
+          window.location.href = '/console/login'
           return
         }
 

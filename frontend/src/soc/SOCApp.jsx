@@ -79,7 +79,14 @@ export default function SOCApp() {
           window.history.replaceState({}, '', '/console/soc')
         }
 
-        const token = sessionStorage.getItem(STORAGE_KEY)
+        let token = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY)
+        if (token) {
+          sessionStorage.setItem(STORAGE_KEY, token)
+          localStorage.setItem(STORAGE_KEY, token)
+        } else {
+          window.location.href = '/console/login'
+          return
+        }
         if (!token) {
           window.location.href = '/console/login'
           return

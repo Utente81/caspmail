@@ -15,14 +15,20 @@ function openDB() {
 }
 
 function getKeyId() {
-  return sessionStorage.getItem('caspmail_user_email') || 'main'
+  const email = sessionStorage.getItem('caspmail_user_email') || localStorage.getItem('caspmail_user_email')
+  return (email && email.trim()) ? email.trim() : 'main'
 }
 
 export async function storeKeyPair(keyPair) {
   const db = await openDB()
+  const keyId = getKeyId()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put(keyPair, getKeyId())
+    const store = tx.objectStore(DB_STORE)
+    store.put(keyPair, keyId)
+    if (keyId !== 'main') {
+      store.put(keyPair, 'main')
+    }
     tx.oncomplete = resolve
     tx.onerror = () => reject(tx.error)
   })
@@ -30,19 +36,32 @@ export async function storeKeyPair(keyPair) {
 
 export async function loadKeyPair() {
   const db = await openDB()
+  const primaryKeyId = getKeyId()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_STORE, 'readonly')
-    const req = tx.objectStore(DB_STORE).get(getKeyId())
-    req.onsuccess = () => resolve(req.result || null)
+    const store = tx.objectStore(DB_STORE)
+    const req = store.get(primaryKeyId)
+    req.onsuccess = () => {
+      if (req.result) {
+        resolve(req.result)
+      } else {
+        const fallbackReq = store.get('main')
+        fallbackReq.onsuccess = () => resolve(fallbackReq.result || null)
+        fallbackReq.onerror = () => resolve(null)
+      }
+    }
     req.onerror = () => reject(req.error)
   })
 }
 
 export async function deleteKeyPair() {
   const db = await openDB()
+  const keyId = getKeyId()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).delete(getKeyId())
+    const store = tx.objectStore(DB_STORE)
+    store.delete(keyId)
+    store.delete('main')
     tx.oncomplete = resolve
     tx.onerror = () => reject(tx.error)
   })
@@ -76,21 +95,17 @@ export async function fingerprintPublicKey(publicKey) {
 export async function importPublicKeyPem(pem) {
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
   const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
-  return crypto.subtle.importKey('spki', der, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+  return crypto.subtle.importKey('spki', der, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt'])
 }
 
 // ── Hybrid Encrypt (RSA-OAEP + AES-GCM) ─────────────────────────────────────
-// Returns { subject_encrypted, body_encrypted, nonce } — all base64
 
 export async function encryptMessage(recipientPublicKey, subject, body) {
-  // Generate ephemeral AES-GCM key
   const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
   const rawAes = await crypto.subtle.exportKey('raw', aesKey)
 
-  // Encrypt AES key with recipient's RSA public key
   const encryptedAesKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, recipientPublicKey, rawAes)
 
-  // Encrypt subject and body with AES-GCM
   const subjectIv = crypto.getRandomValues(new Uint8Array(12))
   const bodyIv = crypto.getRandomValues(new Uint8Array(12))
 
@@ -116,7 +131,6 @@ export async function encryptMessage(recipientPublicKey, subject, body) {
 export async function decryptMessage(privateKey, subject_encrypted, body_encrypted, nonce) {
   const { k, si, bi } = JSON.parse(nonce)
 
-  // Decrypt AES key
   const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, unb64(k))
   const aesKey = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt'])
 
@@ -175,7 +189,6 @@ export async function encryptPrivateKey(privateKey, password) {
     pkcs8
   )
   
-  // Combine IV and Ciphertext for easier storage
   const combined = new Uint8Array(iv.length + encrypted.byteLength)
   combined.set(iv, 0)
   combined.set(new Uint8Array(encrypted), iv.length)

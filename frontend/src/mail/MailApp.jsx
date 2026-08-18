@@ -23,7 +23,7 @@ function BootScreen({ error }) {
           <span style={{ fontSize: '.82rem' }}>{error}</span>
           <button
             type="button"
-            onClick={() => { sessionStorage.clear(); window.location.href = '/console/login' }}
+            onClick={() => { sessionStorage.clear(); localStorage.clear(); window.location.href = '/console/login' }}
             style={{
               marginTop: 16, padding: '8px 20px', borderRadius: 8,
               background: 'rgba(59,130,246,.12)', border: '1px solid rgba(59,130,246,.25)',
@@ -158,9 +158,12 @@ export default function MailApp() {
           if (data.id_token) sessionStorage.setItem('caspmail_id_token', data.id_token)
           if (data.refresh_token) sessionStorage.setItem('caspmail_refresh_token', data.refresh_token)
           sessionStorage.setItem('caspmail_client_id', 'caspermail-web')
+          
           const payload = JSON.parse(atob(data.access_token.split('.')[1]))
+          const email = payload.email || payload.preferred_username || ''
           sessionStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'User')
-          sessionStorage.setItem('caspmail_user_email', payload.email || payload.preferred_username || '')
+          sessionStorage.setItem('caspmail_user_email', email)
+          if (email) localStorage.setItem('caspmail_user_email', email)
           const roles = payload?.realm_access?.roles || []
           const role = (roles.includes('admin') || roles.includes('casper_admin')) ? 'Admin'
             : roles.includes('soc_analyst') ? 'SOC Analyst'
@@ -180,6 +183,17 @@ export default function MailApp() {
             await startLogin()
             return
           }
+          // Always ensure email and user info are populated on every boot
+          const email = payload.email || payload.preferred_username || ''
+          sessionStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'User')
+          sessionStorage.setItem('caspmail_user_email', email)
+          if (email) localStorage.setItem('caspmail_user_email', email)
+          const roles = payload?.realm_access?.roles || []
+          const role = (roles.includes('admin') || roles.includes('casper_admin')) ? 'Admin'
+            : roles.includes('soc_analyst') ? 'SOC Analyst'
+            : roles.includes('soc_manager') ? 'SOC Manager'
+            : 'User'
+          sessionStorage.setItem('caspmail_user_role', role)
         } catch {
           sessionStorage.removeItem(STORAGE_KEY)
           await startLogin()

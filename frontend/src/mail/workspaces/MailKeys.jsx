@@ -3,7 +3,7 @@ import { Key, ShieldCheck, AlertCircle, RefreshCw, Trash2, CheckCircle, Download
 import {
   generateKeyPair, exportPublicKeyPem, fingerprintPublicKey,
   storeKeyPair, loadKeyPair, deleteKeyPair,
-  encryptPrivateKey, decryptPrivateKey
+  encryptPrivateKey, decryptPrivateKey, importPublicKeyPem
 } from '../crypto.js'
 
 function apiFetch(path, opts = {}) {
@@ -97,10 +97,7 @@ export default function MailKeys({ keyPair, onKeyChange }) {
         restorePassword
       )
       
-      // We must reconstruct the public key from the server PEM
-      const b64 = serverKey.public_key.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
-      const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
-      const publicKey = await crypto.subtle.importKey('spki', der, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt'])
+      const publicKey = await importPublicKeyPem(serverKey.public_key)
       
       const kp = { publicKey, privateKey }
       await storeKeyPair(kp)
@@ -109,6 +106,7 @@ export default function MailKeys({ keyPair, onKeyChange }) {
       if (onKeyChange) onKeyChange(kp)
       setSuccess('Private key successfully restored from backup!')
     } catch (err) {
+      console.error('[restore-key-error]', err)
       setError('Failed to restore. The password might be incorrect.')
     } finally {
       setRestoring(false)

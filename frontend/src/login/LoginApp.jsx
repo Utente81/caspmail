@@ -2,16 +2,20 @@ import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
-import React, { useState } from 'react'
-import { Mail, ShieldCheck, Settings, ArrowRight } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Mail, ShieldCheck, Settings } from 'lucide-react'
 import ParticleNetwork from './ParticleNetwork';
+
+const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer
+  || 'https://auth.caspmail.com/realms/caspermail'
 
 const APPS = [
   {
     id: 'mail',
     label: 'Mail Console',
-    desc: 'Access your secure mailbox & E2EE messages.',
+    desc: 'Access your secure mailbox.',
     icon: Mail,
+    clientId: 'caspermail-web',
     redirectPath: '/console/',
     color: '#0ea5e9',
     colorDim: 'rgba(14, 165, 233, 0.15)'
@@ -19,8 +23,9 @@ const APPS = [
   {
     id: 'soc',
     label: 'SOC Dashboard',
-    desc: 'Monitor threats, alerts & SIEM telemetry.',
+    desc: 'Monitor threats & security status.',
     icon: ShieldCheck,
+    clientId: 'caspermail-soc',
     redirectPath: '/console/soc',
     color: '#a855f7',
     colorDim: 'rgba(168, 85, 247, 0.15)'
@@ -28,43 +33,50 @@ const APPS = [
   {
     id: 'admin',
     label: 'Admin Dashboard',
-    desc: 'Manage users, domains & cluster infrastructure.',
+    desc: 'Manage users, settings, and systems.',
     icon: Settings,
+    clientId: 'caspermail-admin',
     redirectPath: '/console/admin',
     color: '#10b981',
     colorDim: 'rgba(16, 185, 129, 0.15)'
   }
 ]
 
-function createAdminToken() {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({
-    sub: "admin-user-01",
-    preferred_username: "admin",
-    name: "Enterprise Admin",
-    email: "admin@caspmail.com",
-    realm_access: {
-      roles: ["admin", "casper_admin", "soc_analyst", "soc_manager", "user"]
-    },
-    exp: Math.floor(Date.now() / 1000) + 86400 * 30
-  }));
-  const signature = "caspermail_direct_token_sig";
-  return `${header}.${payload}.${signature}`;
+function generateVerifier() {
+  const arr = new Uint8Array(32)
+  crypto.getRandomValues(arr)
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
+async function generateChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
 export default function LoginApp() {
   const [loading, setLoading] = useState(null)
 
-  function handleAppClick(app) {
+  async function handleAppClick(app) {
     setLoading(app.id)
-    const token = createAdminToken();
-    sessionStorage.setItem('caspmail_access_token', token);
-    localStorage.setItem('caspmail_access_token', token);
-    sessionStorage.setItem('caspmail_user_name', 'Enterprise Admin');
-    sessionStorage.setItem('caspmail_user_email', 'admin@caspmail.com');
-    sessionStorage.setItem('caspmail_user_role', 'Admin');
-    localStorage.setItem('caspmail_user_email', 'admin@caspmail.com');
-    window.location.href = app.redirectPath;
+
+    const storageKey = `${app.id}_pkce_verifier`
+    const verifier = generateVerifier()
+    const challenge = await generateChallenge(verifier)
+    sessionStorage.setItem(storageKey, verifier)
+
+    const redirectUri = window.location.origin + app.redirectPath
+    const url = new URL(`${ISSUER}/protocol/openid-connect/auth`)
+    url.searchParams.set('client_id', app.clientId)
+    url.searchParams.set('redirect_uri', redirectUri)
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('scope', 'openid profile email')
+    url.searchParams.set('code_challenge', challenge)
+    url.searchParams.set('code_challenge_method', 'S256')
+    url.searchParams.set('state', Math.random().toString(36).slice(2))
+    
+    // Redirecting to Keycloak
+    window.location.href = url.toString()
   }
 
   return (
@@ -75,7 +87,7 @@ export default function LoginApp() {
       {/* Stars Layer */}
       <div className="stars-layer">
         {Array.from({ length: 40 }).map((_, i) => {
-          const size = Math.random() * 3 + 2;
+          const size = Math.random() * 3 + 2; // 2–5px
           return (
             <div key={i} className="star" style={{
               top: `${Math.random() * 100}%`,
@@ -89,11 +101,11 @@ export default function LoginApp() {
         })}
       </div>
       
-      <div className="login-card" style={{ maxWidth: 720 }}>
+      <div className="login-card">
         {/* Header */}
-        <div className="login-header" style={{ marginBottom: 24 }}>
-          <p className="login-sub-title">SECURITY CASP WORKSPACE</p>
-          <h1 className="login-title">Select Your Workspace Console</h1>
+        <div className="login-header">
+          <p className="login-sub-title">WELCOME BACK</p>
+          <h1 className="login-title">Welcome To Security Casp Workspace</h1>
         </div>
 
         {/* App Selection Grid */}
@@ -117,9 +129,6 @@ export default function LoginApp() {
                 </div>
                 <h3 className="app-label">{app.label}</h3>
                 <p className="app-desc">{app.desc}</p>
-                <div style={{ marginTop: 12, fontSize: '0.75rem', color: app.color, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                  Enter Console <ArrowRight size={12} />
-                </div>
               </button>
             )
           })}

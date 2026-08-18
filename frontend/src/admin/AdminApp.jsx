@@ -99,10 +99,10 @@ export default function AdminApp() {
           return
         }
 
+        if (alive) setReady(true);
       } catch (err) {
-        console.error('[admin-auth]', err)
-      } finally {
-        if (alive) setReady(true)
+        console.error('[admin-auth]', err);
+        if (alive) { setError(err.message || 'Auth Error'); setReady(false); }
       }
     }
 

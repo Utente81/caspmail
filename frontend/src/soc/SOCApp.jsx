@@ -110,10 +110,10 @@ export default function SOCApp() {
           return
         }
 
+        if (alive) setReady(true);
       } catch (err) {
-        console.error('[soc-auth]', err)
-      } finally {
-        if (alive) setReady(true)
+        console.error('[soc-auth]', err);
+        if (alive) { setError(err.message || 'Auth Error'); setReady(false); }
       }
     }
     boot()

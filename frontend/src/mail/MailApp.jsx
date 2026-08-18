@@ -217,10 +217,10 @@ export default function MailApp() {
         } catch(e) {
           console.warn('Failed to fetch policies', e)
         }
+        if (alive) setReady(true);
       } catch (err) {
-        console.error('[mail-auth]', err)
-      } finally {
-        if (alive) setReady(true)
+        console.error('[mail-auth]', err);
+        if (alive) { setError(err.message || 'Auth Error'); setReady(false); }
       }
     }
     boot()

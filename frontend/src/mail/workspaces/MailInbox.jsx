@@ -59,6 +59,15 @@ function MessageList({ messages, onSelect, selected, folder, checkedIds, setChec
           key={msg.id}
           className={`mail-msg-item${selected?.id === msg.id ? ' selected' : ''}${(!msg.read_at && folder === 'inbox') ? ' unread' : ''}`}
           onClick={() => onSelect(msg)}
+          draggable={true}
+          onDragStart={(e) => {
+            if (checkedIds.has(msg.id)) {
+              e.dataTransfer.setData('text/plain', Array.from(checkedIds).join(','));
+            } else {
+              e.dataTransfer.setData('text/plain', String(msg.id));
+            }
+            e.dataTransfer.effectAllowed = 'move';
+          }}
         >
           <input type="checkbox" onClick={(e) => e.stopPropagation()} onChange={(e) => { const newIds = new Set(checkedIds); if (e.target.checked) newIds.add(msg.id); else newIds.delete(msg.id); setCheckedIds(newIds); }} checked={checkedIds.has(msg.id)} style={{marginRight: '12px'}} /><div className="mail-msg-from">{folder === 'sent' ? `To: ${msg.to_email}` : `From: ${msg.from_email}`}</div>
           <div className="mail-msg-meta">

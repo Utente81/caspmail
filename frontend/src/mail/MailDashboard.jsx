@@ -190,6 +190,32 @@ export default function MailDashboard() {
                 key={item.id}
                 className={`mail-nav-item${active === item.id ? ' active' : ''}`}
                 onClick={() => setActive(item.id)}
+                onDragEnter={(e) => e.preventDefault()}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                onDragLeave={(e) => e.currentTarget.classList.remove('drag-over')}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('drag-over');
+                  const payload = e.dataTransfer.getData('text/plain');
+                  if (!payload) return;
+                  const ids = payload.split(','); console.log('DROPPED', ids, 'to folder', (typeof item !== 'undefined' ? item.id : (typeof f !== 'undefined' ? f.id : 'unknown')));
+                  const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+                  let p;
+                  if (item.id === 'trash') {
+                    p = fetch('/api/e2ee/messages/bulk/trash', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                      body: JSON.stringify({ ids })
+                    });
+                  } else {
+                    p = fetch('/api/e2ee/messages/bulk/flags', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                      body: JSON.stringify({ ids, flags: { folder_id: item.id } })
+                    });
+                  }
+                  p.then(() => setRefreshTrigger(t => t + 1));
+                }}
               >
                 <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
                   <Icon size={15} />
@@ -221,7 +247,25 @@ export default function MailDashboard() {
               </button>
             </div>
             {customFolders.map(f => (
-              <div key={f.id} className={`mail-nav-item${active === f.id ? ' active' : ''}`} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}} onClick={() => setActive(f.id)}>
+              <div key={f.id} className={`mail-nav-item${active === f.id ? ' active' : ''}`} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}} onClick={() => setActive(f.id)}
+ onDragEnter={(e) => e.preventDefault()}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+ onDragLeave={(e) => e.currentTarget.classList.remove('drag-over')}
+ onDrop={(e) => {
+ e.preventDefault();
+ e.currentTarget.classList.remove('drag-over');
+ const payload = e.dataTransfer.getData('text/plain');
+ if (!payload) return;
+ const ids = payload.split(','); console.log('DROPPED', ids, 'to folder', (typeof item !== 'undefined' ? item.id : (typeof f !== 'undefined' ? f.id : 'unknown')));
+ const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+ 
+ fetch('/api/e2ee/messages/bulk/flags', {
+ method: 'PATCH',
+ headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+ body: JSON.stringify({ ids, flags: { folder_id: f.id } })
+ }).then(() => setRefreshTrigger(t => t + 1));
+ }}
+ >
                 <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                   <Folder size={14} color={f.color || '#888'} />
                   <span>{f.name}</span>

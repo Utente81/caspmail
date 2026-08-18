@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw, User, Clock, Hash, Lock, Unlock, Save, FileText } from 'lucide-react'
+import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw, User, Clock, Hash, Lock, Unlock, Save, FileText, Server, HardDrive, Cpu } from 'lucide-react'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -52,6 +52,17 @@ function TableSkeleton({ rows = 5, cols = 5 }) {
     </table>
   )
 }
+
+const containerHealth = [
+  { name: 'casper-backend', ready: '2/2 Ready', desc: 'Fastify Node API Microservices', status: 'Running', load: '35%' },
+  { name: 'casper-cnpg-ha', ready: '3/3 Ready', desc: 'CloudNative PostgreSQL HA Cluster', status: 'Running', load: '48%' },
+  { name: 'keycloak-sso', ready: '2/2 Ready', desc: 'Keycloak 24 Identity & WebAuthn', status: 'Running', load: '42%' },
+  { name: 'casper-vault-kms', ready: '1/1 Ready', desc: 'HashiCorp Vault Transit Unseal', status: 'Running', load: '18%' },
+  { name: 'minio-storage', ready: '1/1 Ready', desc: 'MinIO High-Performance S3', status: 'Running', load: '24%' },
+  { name: 'casper-redis-cluster', ready: '3/3 Ready', desc: 'Redis Distributed Cache', status: 'Running', load: '31%' },
+  { name: 'traefik-waf-gateway', ready: '1/1 Ready', desc: 'Traefik Ingress + Security Middleware', status: 'Running', load: '22%' },
+  { name: 'loki-promtail-telemetry', ready: '2/2 Ready', desc: 'Grafana Loki + Promtail Pipeline', status: 'Running', load: '15%' },
+];
 
 const MOCK_DATA = {
   kpis: {
@@ -111,9 +122,10 @@ const defaultGrid = [
   { i: 'kpi_score', x: 9, y: 0, w: 3, h: 4 },
   { i: 'chart_trend', x: 0, y: 4, w: 8, h: 10 },
   { i: 'chart_severity', x: 8, y: 4, w: 4, h: 10 },
-  { i: 'table_alerts', x: 0, y: 14, w: 12, h: 10 },
-  { i: 'table_cases', x: 0, y: 24, w: 8, h: 9 },
-  { i: 'sys_health', x: 8, y: 24, w: 4, h: 9 }
+  { i: 'container_health', x: 0, y: 14, w: 12, h: 7 },
+  { i: 'table_alerts', x: 0, y: 21, w: 12, h: 10 },
+  { i: 'table_cases', x: 0, y: 31, w: 8, h: 9 },
+  { i: 'sys_health', x: 8, y: 31, w: 4, h: 9 }
 ];
 
 const DEFAULT_LAYOUTS = {
@@ -196,7 +208,7 @@ export default function SOCOverview() {
   const cases = (data?.recent_cases && data.recent_cases.length > 0) ? data.recent_cases : MOCK_DATA.recent_cases
   const health = (data?.system_health && data.system_health.length > 0) ? data.system_health : MOCK_DATA.system_health
 
-  // ─── Pure SVG Vector Calculations using useMemo Hooks ───────────────────────
+  // ─── Pure SVG Vector Calculations ───────────────────────
   const trendPoints = useMemo(() => {
     const raw = (data?.events_trend && data.events_trend.length > 0)
       ? data.events_trend
@@ -466,6 +478,36 @@ export default function SOCOverview() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Container Infrastructure Health Widget */}
+          <div key="container_health" className={`soc-panel ${isEditable?'edit-mode':''}`}>
+            <div className="soc-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="soc-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Server size={14} color="#3b82f6" /> Container & K3s Cluster Infrastructure Status
+              </h3>
+              <span style={{ fontSize: '0.75rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} /> K3s Operational
+              </span>
+            </div>
+            <div style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', flex: 1, overflowY: 'auto' }}>
+              {containerHealth.map((c, i) => (
+                <div key={i} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.4)', borderRadius: '8px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc' }}>{c.name}</span>
+                    <span className="soc-badge status-healthy" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>{c.ready}</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{c.desc}</span>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>{c.status}</span>
+                  </div>
+                  {/* Load Bar */}
+                  <div style={{ width: '100%', background: '#1e293b', height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 4 }}>
+                    <div style={{ width: c.load, height: '100%', background: '#3b82f6', borderRadius: 2 }} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

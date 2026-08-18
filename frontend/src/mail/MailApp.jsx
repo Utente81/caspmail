@@ -180,11 +180,7 @@ export default function MailApp() {
           localStorage.setItem(STORAGE_KEY, token)
         }
         if (!token) {
-          try {
-            await startLogin()
-          } catch(e) {
-            if (alive) setError('Failed to initiate login: ' + e.message)
-          }
+          window.location.href = '/console/login'
           return
         }
 

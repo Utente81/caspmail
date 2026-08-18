@@ -16,7 +16,7 @@ spec:
       imagePullSecrets:
       - name: ghcr-login-secret
       containers:
-      - image: ghcr.io/utente81/caspmail-frontend:e954f8efb61db09db2e427482f673ce3802cfa0d
+      - image: ghcr.io/utente81/caspmail-frontend:f3b81c72f4dbee39ccf020e0c58175c6bedebafd
         securityContext:
           readOnlyRootFilesystem: true
         imagePullPolicy: IfNotPresent

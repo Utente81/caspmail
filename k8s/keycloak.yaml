@@ -60,7 +60,7 @@ spec:
           value: dns.DNS_PING
         - name: JGROUPS_DISCOVERY_PROPERTIES
           value: dns_query=casper-keycloak-headless.caspermail.svc.cluster.local
-        image: ghcr.io/utente81/caspmail-keycloak:7ff4423c44e9354758701527d39d7f3a2a0775df
+        image: ghcr.io/utente81/caspmail-keycloak:45b295b079c6eb65e34f4d03df1e1eacd38c0b8c
         imagePullPolicy: Always
         name: keycloak
         ports:

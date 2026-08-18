@@ -415,3 +415,8 @@ table { border-collapse: collapse; width: 100%; }
   align-items: center;
   justify-content: space-between;
 }
+
+.react-grid-item > .soc-panel {
+  height: 100%;
+  box-sizing: border-box;
+}

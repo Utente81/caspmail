@@ -322,20 +322,24 @@ export default function SOCOverview() {
           {/* Charts Row */}
           <div key="chart_trend" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header"><h3 className="soc-panel-title">Events Trend (24h)</h3></div>
-            <div style={{ width: '100%', height: 'calc(100% - 40px)' }}>
+            <div style={{ width: '100%', height: 250, padding: '12px 12px 0 0', boxSizing: 'border-box' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={180}>
+                <ResponsiveContainer width="100%" height={220}>
                   <AreaChart data={eventsTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.6} />
-                        <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.6} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="time_bucket" tickFormatter={(t) => new Date(t).getHours() + ':00'} stroke="#64748b" fontSize={11} />
+                    <XAxis dataKey="time_bucket" tickFormatter={(t) => {
+                      try { return new Date(t).getHours() + ':00'; } catch(e) { return ''; }
+                    }} stroke="#64748b" fontSize={11} />
                     <YAxis stroke="#64748b" fontSize={11} />
                     <RechartsTooltip 
-                      labelFormatter={(t) => new Date(t).toLocaleString()}
+                      labelFormatter={(t) => {
+                        try { return new Date(t).toLocaleString(); } catch(e) { return t; }
+                      }}
                       contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 8, color: '#f1f5f9' }}
                     />
                     <Area type="monotone" dataKey="event_count" stroke="#3b82f6" fillOpacity={1} fill="url(#colorEvents)" />
@@ -347,18 +351,18 @@ export default function SOCOverview() {
 
           <div key="chart_severity" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header"><h3 className="soc-panel-title">Severity</h3></div>
-            <div style={{ width: '100%', height: 'calc(100% - 40px)' }}>
+            <div style={{ width: '100%', height: 250, boxSizing: 'border-box' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={180}>
+                <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie
                       data={severityDistribution}
                       dataKey="count"
                       nameKey="severity"
                       cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={70}
+                      cy="45%"
+                      innerRadius={35}
+                      outerRadius={65}
                       paddingAngle={4}
                     >
                       {severityDistribution.map((entry, index) => (

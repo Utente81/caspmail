@@ -188,7 +188,7 @@ export default function MailApp() {
           const payload = JSON.parse(atob(token.split('.')[1]))
           if (payload.exp && payload.exp * 1000 < Date.now()) {
             sessionStorage.removeItem(STORAGE_KEY)
-            await startLogin()
+            window.location.href = '/console/login'
             return
           }
           // Always ensure email and user info are populated on every boot
@@ -204,7 +204,7 @@ export default function MailApp() {
           sessionStorage.setItem('caspmail_user_role', role)
         } catch {
           sessionStorage.removeItem(STORAGE_KEY)
-          await startLogin()
+          window.location.href = '/console/login'
           return
         }
 

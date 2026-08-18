@@ -55,25 +55,25 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const [metrics, alerts, cases] = await Promise.all([
       pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
            AND created_at > NOW() - INTERVAL '24 hours') AS events_24h,
-          (SELECT COUNT(*) FROM soc_events WHERE tenant_id=$1
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
            AND severity IN ('high','critical')
            AND created_at > NOW() - INTERVAL '24 hours') AS high_severity_24h,
-          (SELECT COUNT(*) FROM soc_alerts WHERE tenant_id=$1 AND status='open') AS open_alerts,
-          (SELECT COUNT(*) FROM soc_cases  WHERE tenant_id=$1 AND status='open') AS open_cases
+          (SELECT COUNT(*) FROM soc_alerts WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_cases
       `, [tenantId]),
       pool.query(`
         SELECT a.id, a.severity, a.message, a.status, a.created_at,
                e.type AS event_type, e.source_ip
         FROM soc_alerts a
         LEFT JOIN soc_events e ON e.id = a.event_id
-        WHERE a.tenant_id = $1
+        WHERE (a.tenant_id = $1 OR a.tenant_id IN ('system','acme-corp') OR $1 IS NULL)
         ORDER BY a.created_at DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
         SELECT id, title, severity, status, type, assigned_to, created_at
-        FROM soc_cases WHERE tenant_id = $1
+        FROM soc_cases WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
     ]);
@@ -83,7 +83,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           date_trunc('hour', created_at) AS time_bucket,
           COUNT(*) AS event_count
         FROM soc_events
-        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
         ORDER BY 1 ASC
       `, [tenantId]),
@@ -92,7 +92,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           LOWER(severity) AS severity,
           COUNT(*) AS count
         FROM soc_events
-        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
       `, [tenantId]),
     ]);

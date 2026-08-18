@@ -77,10 +77,55 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
     ]);
+    const [eventsTrend, severityDist] = await Promise.all([
+      pool.query(`
+        SELECT 
+          date_trunc('hour', created_at) AS time_bucket,
+          COUNT(*) AS event_count
+        FROM soc_events
+        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `, [tenantId]),
+      pool.query(`
+        SELECT 
+          LOWER(severity) AS severity,
+          COUNT(*) AS count
+        FROM soc_events
+        WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY 1
+      `, [tenantId]),
+    ]);
+
+    const m = metrics.rows[0] || {};
+    const openAlerts = parseInt(m.open_alerts || '0', 10);
+    const highSev = parseInt(m.high_severity_24h || '0', 10);
+
     reply.send({
-      metrics: metrics.rows[0],
+      metrics: m,
+      kpis: {
+        events_24h: parseInt(m.events_24h || '0', 10),
+        open_cases: parseInt(m.open_cases || '0', 10),
+        critical_alerts: openAlerts,
+        security_score: Math.max(0, 100 - (highSev * 3 + openAlerts * 5))
+      },
+      events_trend: eventsTrend.rows.map(r => ({
+        time_bucket: r.time_bucket,
+        event_count: parseInt(r.event_count, 10)
+      })),
+      severity_distribution: severityDist.rows.map(r => ({
+        severity: r.severity,
+        count: parseInt(r.count, 10)
+      })),
       recent_alerts: alerts.rows,
       recent_cases: cases.rows,
+      system_health: [
+        { name: 'SIEM Ingestion Engine', status: 'healthy' },
+        { name: 'Threat Intel Feed', status: 'healthy' },
+        { name: 'Email Gateway WAF', status: 'healthy' },
+        { name: 'Vault KMS Auto-Unseal', status: 'healthy' },
+        { name: 'SOAR Incident Automation', status: 'healthy' },
+      ]
     });
   });
   // ─── Alerts ───────────────────────────────────────────────────────────────

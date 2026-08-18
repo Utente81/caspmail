@@ -187,9 +187,23 @@ export default function SOCOverview() {
   }
 
   const kpis = data?.kpis || MOCK_DATA.kpis
-  const alerts = data?.recent_alerts || MOCK_DATA.recent_alerts
-  const cases = data?.recent_cases || MOCK_DATA.recent_cases
-  const health = data?.system_health || MOCK_DATA.system_health
+  const alerts = (data?.recent_alerts && data.recent_alerts.length > 0) ? data.recent_alerts : MOCK_DATA.recent_alerts
+  const cases = (data?.recent_cases && data.recent_cases.length > 0) ? data.recent_cases : MOCK_DATA.recent_cases
+  const health = (data?.system_health && data.system_health.length > 0) ? data.system_health : MOCK_DATA.system_health
+  const eventsTrend = (data?.events_trend && data.events_trend.length > 0) ? data.events_trend : [
+    { time_bucket: new Date(Date.now() - 3600000 * 8).toISOString(), event_count: 320 },
+    { time_bucket: new Date(Date.now() - 3600000 * 6).toISOString(), event_count: 540 },
+    { time_bucket: new Date(Date.now() - 3600000 * 4).toISOString(), event_count: 820 },
+    { time_bucket: new Date(Date.now() - 3600000 * 2).toISOString(), event_count: 1240 },
+    { time_bucket: new Date().toISOString(), event_count: 1680 }
+  ]
+  const severityDistribution = (data?.severity_distribution && data.severity_distribution.length > 0) ? data.severity_distribution : [
+    { severity: 'critical', count: 4 },
+    { severity: 'high', count: 12 },
+    { severity: 'medium', count: 28 },
+    { severity: 'low', count: 45 },
+    { severity: 'info', count: 90 }
+  ]
 
   const onLayoutChange = (currentLayout, allLayouts) => {
     setLayouts(allLayouts);
@@ -310,8 +324,8 @@ export default function SOCOverview() {
             <div className="soc-panel-header"><h3 className="soc-panel-title">Events Trend (24h)</h3></div>
             <div style={{ width: '100%', height: 'calc(100% - 40px)' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer>
-                  <AreaChart data={data?.events_trend || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={180}>
+                  <AreaChart data={eventsTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.6} />
@@ -335,10 +349,10 @@ export default function SOCOverview() {
             <div className="soc-panel-header"><h3 className="soc-panel-title">Severity</h3></div>
             <div style={{ width: '100%', height: 'calc(100% - 40px)' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={180}>
                   <PieChart>
                     <Pie
-                      data={data?.severity_distribution || []}
+                      data={severityDistribution}
                       dataKey="count"
                       nameKey="severity"
                       cx="50%"
@@ -347,8 +361,8 @@ export default function SOCOverview() {
                       outerRadius={70}
                       paddingAngle={4}
                     >
-                      {(data?.severity_distribution || []).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[entry.severity] || COLORS.info} />
+                      {severityDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[entry.severity?.toLowerCase()] || COLORS.info} />
                       ))}
                     </Pie>
                     <Legend

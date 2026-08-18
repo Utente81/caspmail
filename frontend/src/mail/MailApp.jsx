@@ -155,6 +155,7 @@ export default function MailApp() {
           if (!res.ok) throw new Error('Token exchange failed')
           const data = await res.json()
           sessionStorage.setItem(STORAGE_KEY, data.access_token)
+          localStorage.setItem(STORAGE_KEY, data.access_token)
           if (data.id_token) sessionStorage.setItem('caspmail_id_token', data.id_token)
           if (data.refresh_token) sessionStorage.setItem('caspmail_refresh_token', data.refresh_token)
           sessionStorage.setItem('caspmail_client_id', 'caspermail-web')
@@ -173,8 +174,19 @@ export default function MailApp() {
           window.history.replaceState({}, '', '/console/')
         }
 
-        const token = sessionStorage.getItem(STORAGE_KEY)
-        if (!token) { await startLogin(); return }
+        let token = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY)
+        if (token) {
+          sessionStorage.setItem(STORAGE_KEY, token)
+          localStorage.setItem(STORAGE_KEY, token)
+        }
+        if (!token) {
+          try {
+            await startLogin()
+          } catch(e) {
+            if (alive) setError('Failed to initiate login: ' + e.message)
+          }
+          return
+        }
 
         try {
           const payload = JSON.parse(atob(token.split('.')[1]))

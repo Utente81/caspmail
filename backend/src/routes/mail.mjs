@@ -202,9 +202,9 @@ export default async function mailRoutes(app) {
     if (folder === 'inbox') {
       query += ` AND to_email = $2 AND recipient_deleted_at IS NULL 
                  AND COALESCE((recipient_flags->>'spam')::boolean, false) = false 
-                 AND COALESCE((recipient_flags->>'archived')::boolean, false) = false`;
+                 AND COALESCE((recipient_flags->>'archived')::boolean, false) = false AND recipient_flags->>'folder_id' IS NULL`;
     } else if (folder === 'sent') {
-      query += ` AND from_email = $2 AND sender_deleted_at IS NULL`;
+      query += ` AND from_email = $2 AND sender_deleted_at IS NULL AND sender_flags->>'folder_id' IS NULL`;
     } else if (folder === 'trash') {
       query += ` AND (
         (from_email = $2 AND sender_deleted_at IS NOT NULL) OR

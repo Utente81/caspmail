@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { User, Mail, Shield, HardDrive, AlertCircle } from 'lucide-react'
 
 function apiFetch(path) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
   return fetch(path, { headers: { Authorization: `Bearer ${token}` } }).then(async r => {
     const data = await r.json()
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)

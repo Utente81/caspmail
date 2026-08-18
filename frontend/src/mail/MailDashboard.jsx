@@ -63,13 +63,13 @@ export default function MailDashboard() {
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
 
-  const userName  = sessionStorage.getItem('caspmail_user_name')  || 'User'
-  const userRole  = sessionStorage.getItem('caspmail_user_role')  || 'User'
-  const userEmail = sessionStorage.getItem('caspmail_user_email') || ''
+  const userName  = sessionStorage.getItem('caspmail_user_name')  || localStorage.getItem('caspmail_user_name') || 'User'
+  const userRole  = sessionStorage.getItem('caspmail_user_role')  || localStorage.getItem('caspmail_user_role') || 'User'
+  const userEmail = sessionStorage.getItem('caspmail_user_email') || localStorage.getItem('caspmail_user_email') || ''
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const token = sessionStorage.getItem('caspmail_access_token')
+      const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
       if (!token) return
       const rDash = await fetch('/api/me/dashboard', { headers: { Authorization: `Bearer ${token}` } })
       if (rDash.ok) {
@@ -94,7 +94,7 @@ export default function MailDashboard() {
     })
     
     fetch('/api/e2ee/folders', {
-      headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token')}` }
+      headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
     })
       .then(r => r.json())
       .then(d => setFolders(d.data || []))
@@ -107,7 +107,7 @@ export default function MailDashboard() {
     const checkNewMail = async () => {
       await fetchUnreadCount()
       try {
-        const token = sessionStorage.getItem('caspmail_access_token')
+        const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
         if (!token) return
         
         const rMsg = await fetch('/api/e2ee/messages?folder=inbox&limit=1', { headers: { Authorization: `Bearer ${token}` } })
@@ -210,7 +210,7 @@ export default function MailDashboard() {
                 if (name) {
                   fetch('/api/e2ee/folders', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token')}` },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` },
                     body: JSON.stringify({ name })
                   }).then(r => r.json()).then(d => {
                     if (d.id) setFolders([...folders, d]);
@@ -231,7 +231,7 @@ export default function MailDashboard() {
                   if (confirm('Vuoi eliminare la cartella?')) {
                     fetch(`/api/e2ee/folders/${f.id}`, {
                       method: 'DELETE',
-                      headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token')}` }
+                      headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
                     }).then(() => {
                       setFolders(folders.filter(x => x.id !== f.id));
                       if (active === f.id) setActive('inbox');

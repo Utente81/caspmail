@@ -4,7 +4,7 @@ import { decryptMessage } from '../crypto.js'
 import MailCompose from './MailCompose'
 
 function apiGet(path) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
   return fetch(path, { headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
@@ -12,7 +12,7 @@ function apiGet(path) {
 }
 
 function apiDelete(path) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
   return fetch(path, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()

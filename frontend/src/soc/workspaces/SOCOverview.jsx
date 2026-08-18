@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Activity, FolderOpen, AlertTriangle, ShieldCheck, RefreshCw, User, Clock, Hash, Lock, Unlock, Save, FileText } from 'lucide-react'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -13,8 +12,15 @@ function SeverityBadge({ severity }) {
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A';
-  const d = new Date(dateString);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  let str = String(dateString);
+  if (str && !str.includes('T')) str = str.replace(' ', 'T');
+  try {
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return 'N/A';
+  }
 }
 
 function StatusBadge({ status }) {
@@ -185,50 +191,76 @@ export default function SOCOverview() {
     return () => clearInterval(id)
   }, [fetchData, loadLayout])
 
-  if (error) {
-    return (
-      <div className="soc-error-state">
-        <AlertTriangle size={36} />
-        <p>Failed to load overview data</p>
-        <p className="soc-error-detail">{error}</p>
-        <button className="soc-btn soc-btn-primary" onClick={fetchData}>
-          <RefreshCw size={14} /> Retry
-        </button>
-      </div>
-    )
-  }
-
   const kpis = data?.kpis || MOCK_DATA.kpis
   const alerts = (data?.recent_alerts && data.recent_alerts.length > 0) ? data.recent_alerts : MOCK_DATA.recent_alerts
   const cases = (data?.recent_cases && data.recent_cases.length > 0) ? data.recent_cases : MOCK_DATA.recent_cases
   const health = (data?.system_health && data.system_health.length > 0) ? data.system_health : MOCK_DATA.system_health
-  const rawEvents = data?.events_trend
-  const eventsTrend = (Array.isArray(rawEvents) && rawEvents.length > 0)
-    ? rawEvents.map(d => ({
-        time_bucket: d.time_bucket || new Date().toISOString(),
-        event_count: Math.max(0, parseInt(d.event_count || '0', 10) || 0)
-      }))
-    : [
-        { time_bucket: new Date(Date.now() - 3600000 * 8).toISOString(), event_count: 320 },
-        { time_bucket: new Date(Date.now() - 3600000 * 6).toISOString(), event_count: 540 },
-        { time_bucket: new Date(Date.now() - 3600000 * 4).toISOString(), event_count: 820 },
-        { time_bucket: new Date(Date.now() - 3600000 * 2).toISOString(), event_count: 1240 },
-        { time_bucket: new Date().toISOString(), event_count: 1680 }
-      ]
 
-  const rawSev = data?.severity_distribution
-  const severityDistribution = (Array.isArray(rawSev) && rawSev.length > 0)
-    ? rawSev.map(d => ({
-        severity: String(d.severity || 'info').toLowerCase(),
-        count: Math.max(0, parseInt(d.count || '0', 10) || 0)
-      }))
-    : [
-        { severity: 'critical', count: 4 },
-        { severity: 'high', count: 12 },
-        { severity: 'medium', count: 28 },
-        { severity: 'low', count: 45 },
-        { severity: 'info', count: 90 }
-      ]
+  // ─── Pure SVG Vector Calculations using useMemo Hooks ───────────────────────
+  const trendPoints = useMemo(() => {
+    const raw = (data?.events_trend && data.events_trend.length > 0)
+      ? data.events_trend
+      : MOCK_DATA.events_trend;
+
+    const dataPts = raw.map(d => {
+      let count = parseInt(d.event_count || d.count || '0', 10);
+      if (isNaN(count)) count = 0;
+      let timeStr = String(d.time_bucket || '');
+      if (timeStr && !timeStr.includes('T')) {
+        timeStr = timeStr.replace(' ', 'T');
+      }
+      let hourLabel = '';
+      try {
+        const dt = new Date(timeStr);
+        if (!isNaN(dt.getTime())) {
+          hourLabel = dt.getHours().toString().padStart(2, '0') + ':00';
+        }
+      } catch (e) {
+        hourLabel = '';
+      }
+      return { count, hourLabel };
+    });
+
+    const maxVal = Math.max(...dataPts.map(p => p.count), 100) || 100;
+    const widthStep = 440 / Math.max(dataPts.length - 1, 1);
+
+    const pts = dataPts.map((p, i) => {
+      const x = 40 + i * widthStep;
+      const y = 150 - Math.min(120, (p.count / maxVal) * 120);
+      return { x: isNaN(x) ? 40 : x, y: isNaN(y) ? 150 : y, count: p.count, label: p.hourLabel };
+    });
+
+    const pathD = pts.reduce((acc, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`, '');
+    const lastX = pts[pts.length - 1]?.x || 480;
+    const areaD = pts.length > 0 ? `${pathD} L ${lastX} 150 L 40 150 Z` : 'M 40 150 L 480 150 Z';
+
+    return { pts, pathD, areaD };
+  }, [data]);
+
+  const sevSegments = useMemo(() => {
+    const raw = (data?.severity_distribution && data.severity_distribution.length > 0)
+      ? data.severity_distribution
+      : MOCK_DATA.severity_distribution;
+
+    const items = raw.map(d => ({
+      severity: String(d.severity || 'info').toLowerCase(),
+      count: Math.max(0, parseInt(d.count || '0', 10) || 0)
+    }));
+
+    const total = items.reduce((a, b) => a + b.count, 0) || 1;
+    let cumPercent = 0;
+
+    const segments = items.map(item => {
+      const percent = item.count / total;
+      const strokeDasharray = `${(percent * 283).toFixed(1)} 283`;
+      const strokeDashoffset = (-cumPercent * 283).toFixed(1);
+      cumPercent += percent;
+      const color = COLORS[item.severity] || COLORS.info;
+      return { ...item, strokeDasharray, strokeDashoffset, color };
+    });
+
+    return { segments, total };
+  }, [data]);
 
   const onLayoutChange = (currentLayout, allLayouts) => {
     setLayouts(allLayouts);
@@ -345,7 +377,6 @@ export default function SOCOverview() {
           </div>
 
           {/* Charts Row */}
-                    {/* Charts Row */}
           <div key="chart_trend" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 className="soc-panel-title">Events Trend (24h)</h3>
@@ -373,38 +404,19 @@ export default function SOCOverview() {
                     <text x="32" y="124" fill="#64748b" fontSize="10" textAnchor="end">500</text>
                     <text x="32" y="154" fill="#64748b" fontSize="10" textAnchor="end">0</text>
 
-                    {/* Dynamic Area & Path */}
-                    {(() => {
-                      const dataPts = eventsTrend.length > 0 ? eventsTrend : [
-                        { time_bucket: new Date().toISOString(), event_count: 100 }
-                      ];
-                      const maxVal = Math.max(...dataPts.map(d => Number(d.event_count) || 0), 100) || 100;
-                      const widthStep = 440 / Math.max(dataPts.length - 1, 1);
-                      const points = dataPts.map((d, i) => {
-                        const x = 40 + i * widthStep;
-                        const val = Number(d.event_count) || 0;
-                        const y = 150 - Math.min(120, (val / maxVal) * 120);
-                        return { x, y: isNaN(y) ? 150 : y, val, time: d.time_bucket };
-                      });
-                      const pathD = points.reduce((acc, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`, '');
-                      const lastX = points[points.length - 1]?.x || 480;
-                      const areaD = `${pathD} L ${lastX} 150 L 40 150 Z`;
-
-                      return (
-                        <g>
-                          <path d={areaD} fill="url(#trendGradient)" />
-                          <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
-                          {points.map((pt, i) => (
-                            <g key={i} className="soc-chart-point">
-                              <circle cx={pt.x} cy={pt.y} r="4" fill="#0f172a" stroke="#3b82f6" strokeWidth="2" />
-                              <text x={pt.x} y="168" fill="#64748b" fontSize="9" textAnchor="middle">
-                                {(() => { try { return new Date(pt.time).getHours() + ':00'; } catch(e) { return ''; } })()}
-                              </text>
-                            </g>
-                          ))}
-                        </g>
-                      );
-                    })()}
+                    {/* Area & Path */}
+                    {trendPoints.areaD && <path d={trendPoints.areaD} fill="url(#trendGradient)" />}
+                    {trendPoints.pathD && <path d={trendPoints.pathD} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />}
+                    {trendPoints.pts.map((pt, i) => (
+                      <g key={i} className="soc-chart-point">
+                        <circle cx={pt.x} cy={pt.y} r="4" fill="#0f172a" stroke="#3b82f6" strokeWidth="2" />
+                        {pt.label && (
+                          <text x={pt.x} y="168" fill="#64748b" fontSize="9" textAnchor="middle">
+                            {pt.label}
+                          </text>
+                        )}
+                      </g>
+                    ))}
                   </svg>
                 </div>
               )}
@@ -422,42 +434,31 @@ export default function SOCOverview() {
                   {/* Donut Chart */}
                   <div style={{ position: 'relative', width: 140, height: 140 }}>
                     <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                      {(() => {
-                        const total = severityDistribution.reduce((acc, item) => acc + (item.count || 0), 0) || 1;
-                        let cumPercent = 0;
-                        return severityDistribution.map((item, idx) => {
-                          const percent = (item.count || 0) / total;
-                          const strokeDasharray = `${percent * 283} 283`;
-                          const strokeDashoffset = -cumPercent * 283;
-                          cumPercent += percent;
-                          const color = COLORS[item.severity?.toLowerCase()] || COLORS.info;
-                          return (
-                            <circle
-                              key={idx}
-                              cx="50" cy="50" r="45"
-                              fill="none"
-                              stroke={color}
-                              strokeWidth="10"
-                              strokeDasharray={strokeDasharray}
-                              strokeDashoffset={strokeDashoffset}
-                              style={{ transition: 'all 0.5s ease' }}
-                            />
-                          );
-                        });
-                      })()}
+                      {sevSegments.segments.map((seg, idx) => (
+                        <circle
+                          key={idx}
+                          cx="50" cy="50" r="45"
+                          fill="none"
+                          stroke={seg.color}
+                          strokeWidth="10"
+                          strokeDasharray={seg.strokeDasharray}
+                          strokeDashoffset={seg.strokeDashoffset}
+                          style={{ transition: 'all 0.5s ease' }}
+                        />
+                      ))}
                     </svg>
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                       <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
-                        {severityDistribution.reduce((a, b) => a + (b.count || 0), 0)}
+                        {sevSegments.total}
                       </span>
                       <span style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase' }}>Alerts</span>
                     </div>
                   </div>
                   {/* Legend */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {severityDistribution.map((item, idx) => (
+                    {sevSegments.segments.map((item, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[item.severity?.toLowerCase()] || COLORS.info }} />
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: item.color }} />
                         <span style={{ color: '#cbd5e1', textTransform: 'capitalize', width: 60 }}>{item.severity}</span>
                         <span style={{ color: '#94a3b8', fontWeight: 600 }}>{item.count}</span>
                       </div>
@@ -468,27 +469,32 @@ export default function SOCOverview() {
             </div>
           </div>
 
+          {/* Table: Recent Alerts */}
           <div key="table_alerts" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header"><h3 className="soc-panel-title">Recent Alerts</h3></div>
-            <div style={{ overflow: 'auto', height: 'calc(100% - 40px)' }}>
-              {loading ? <TableSkeleton rows={5} cols={5} /> : (
+            <div style={{ overflowX: 'auto', flex: 1 }}>
+              {loading ? <TableSkeleton rows={5} cols={5} /> : alerts.length === 0 ? (
+                <div className="soc-empty-state"><p>No recent alerts</p></div>
+              ) : (
                 <table className="soc-table">
                   <thead>
                     <tr>
                       <th>Severity</th>
                       <th>Message</th>
                       <th>Type</th>
+                      <th>Source IP</th>
                       <th>Time</th>
                       <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {alerts.map(a => (
+                    {alerts.map((a) => (
                       <tr key={a.id}>
                         <td><SeverityBadge severity={a.severity} /></td>
-                        <td className="soc-td-message" title={a.message}>{a.message}</td>
-                        <td className="soc-td-mono soc-td-muted">{a.event_type || a.type || "N/A"}</td>
-                        <td className="soc-td-muted">{formatDate(a.created_at || a.time)}</td>
+                        <td style={{ fontWeight: 500 }}>{a.message}</td>
+                        <td style={{ color: 'var(--muted)' }}>{a.event_type || a.type || 'N/A'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{a.source_ip || 'N/A'}</td>
+                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDate(a.created_at || a.time)}</td>
                         <td><StatusBadge status={a.status} /></td>
                       </tr>
                     ))}
@@ -498,29 +504,31 @@ export default function SOCOverview() {
             </div>
           </div>
 
-          {/* Recent Cases */}
+          {/* Table: Active Cases */}
           <div key="table_cases" className={`soc-panel ${isEditable?'edit-mode':''}`}>
-            <div className="soc-panel-header"><h3 className="soc-panel-title">Recent Cases</h3></div>
-            <div style={{ overflow: 'auto', height: 'calc(100% - 40px)' }}>
-              {loading ? <TableSkeleton rows={3} cols={5} /> : (
+            <div className="soc-panel-header"><h3 className="soc-panel-title">Active Cases</h3></div>
+            <div style={{ overflowX: 'auto', flex: 1 }}>
+              {loading ? <TableSkeleton rows={3} cols={5} /> : cases.length === 0 ? (
+                <div className="soc-empty-state"><p>No active cases</p></div>
+              ) : (
                 <table className="soc-table">
                   <thead>
                     <tr>
-                      <th>ID</th>
+                      <th>Case ID</th>
                       <th>Title</th>
                       <th>Severity</th>
                       <th>Status</th>
-                      <th>Assigned</th>
+                      <th>Assignee</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {cases.map(c => (
-                      <tr key={c.id.substring(0,8)}>
-                        <td className="soc-td-mono soc-td-muted">{c.id.substring(0,8)}</td>
-                        <td className="soc-td-message" title={c.title}>{c.title}</td>
+                    {cases.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{c.id}</td>
+                        <td style={{ fontWeight: 500 }}>{c.title}</td>
                         <td><SeverityBadge severity={c.severity} /></td>
                         <td><StatusBadge status={c.status} /></td>
-                        <td className="soc-td-muted">{c.assigned_to}</td>
+                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{c.assigned_to || 'Unassigned'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -532,20 +540,19 @@ export default function SOCOverview() {
           {/* System Health */}
           <div key="sys_health" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header"><h3 className="soc-panel-title">System Health</h3></div>
-            <div style={{ overflow: 'auto', height: 'calc(100% - 40px)' }}>
+            <div style={{ padding: '8px 16px', flex: 1, overflowY: 'auto' }}>
               {loading ? <TableSkeleton rows={5} cols={2} /> : (
-                <div className="soc-health-list">
-                  {health.map(h => (
-                    <div key={h.name} className="soc-health-row">
-                      <span className="soc-health-name">{h.name}</span>
-                      <span className={`soc-health-status ${h.status}`}>{h.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {health.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < health.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <span style={{ fontSize: 13, color: 'var(--text)' }}>{item.name}</span>
+                      <span className={`soc-badge status-${item.status?.toLowerCase()}`}>{item.status}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
           </div>
-
         </ResponsiveGridLayout>
       </div>
     </div>

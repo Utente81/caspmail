@@ -320,71 +320,125 @@ export default function SOCOverview() {
           </div>
 
           {/* Charts Row */}
+                    {/* Charts Row */}
           <div key="chart_trend" className={`soc-panel ${isEditable?'edit-mode':''}`}>
-            <div className="soc-panel-header"><h3 className="soc-panel-title">Events Trend (24h)</h3></div>
-            <div style={{ width: '100%', height: 250, padding: '12px 12px 0 0', boxSizing: 'border-box' }}>
+            <div className="soc-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="soc-panel-title">Events Trend (24h)</h3>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Live Telemetry</span>
+            </div>
+            <div style={{ width: '100%', height: 250, padding: '16px 16px 10px 16px', boxSizing: 'border-box', position: 'relative' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={eventsTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <svg viewBox="0 0 500 180" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                     <defs>
-                      <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.6} />
-                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="time_bucket" tickFormatter={(t) => {
-                      try { return new Date(t).getHours() + ':00'; } catch(e) { return ''; }
-                    }} stroke="#64748b" fontSize={11} />
-                    <YAxis stroke="#64748b" fontSize={11} />
-                    <RechartsTooltip 
-                      labelFormatter={(t) => {
-                        try { return new Date(t).toLocaleString(); } catch(e) { return t; }
-                      }}
-                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 8, color: '#f1f5f9' }}
-                    />
-                    <Area type="monotone" dataKey="event_count" stroke="#3b82f6" fillOpacity={1} fill="url(#colorEvents)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                    {/* Grid lines */}
+                    <line x1="40" y1="30" x2="480" y2="30" stroke="#1e293b" strokeDasharray="3 3" />
+                    <line x1="40" y1="75" x2="480" y2="75" stroke="#1e293b" strokeDasharray="3 3" />
+                    <line x1="40" y1="120" x2="480" y2="120" stroke="#1e293b" strokeDasharray="3 3" />
+                    <line x1="40" y1="150" x2="480" y2="150" stroke="#334155" />
+                    
+                    {/* Y-Axis Labels */}
+                    <text x="32" y="34" fill="#64748b" fontSize="10" textAnchor="end">2.0k</text>
+                    <text x="32" y="79" fill="#64748b" fontSize="10" textAnchor="end">1.0k</text>
+                    <text x="32" y="124" fill="#64748b" fontSize="10" textAnchor="end">500</text>
+                    <text x="32" y="154" fill="#64748b" fontSize="10" textAnchor="end">0</text>
+
+                    {/* Dynamic Area & Path */}
+                    {(() => {
+                      const dataPts = eventsTrend;
+                      const maxVal = Math.max(...dataPts.map(d => d.event_count), 2000);
+                      const widthStep = 440 / Math.max(dataPts.length - 1, 1);
+                      const points = dataPts.map((d, i) => {
+                        const x = 40 + i * widthStep;
+                        const y = 150 - (d.event_count / maxVal) * 120;
+                        return { x, y, val: d.event_count, time: d.time_bucket };
+                      });
+                      const pathD = points.reduce((acc, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`, '');
+                      const areaD = `${pathD} L ${points[points.length - 1]?.x || 480} 150 L 40 150 Z`;
+
+                      return (
+                        <g>
+                          <path d={areaD} fill="url(#trendGradient)" />
+                          <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
+                          {points.map((pt, i) => (
+                            <g key={i} className="soc-chart-point">
+                              <circle cx={pt.x} cy={pt.y} r="4" fill="#0f172a" stroke="#3b82f6" strokeWidth="2" />
+                              <text x={pt.x} y="168" fill="#64748b" fontSize="9" textAnchor="middle">
+                                {(() => { try { return new Date(pt.time).getHours() + ':00'; } catch(e) { return ''; } })()}
+                              </text>
+                            </g>
+                          ))}
+                        </g>
+                      );
+                    })()}
+                  </svg>
+                </div>
               )}
             </div>
           </div>
 
           <div key="chart_severity" className={`soc-panel ${isEditable?'edit-mode':''}`}>
-            <div className="soc-panel-header"><h3 className="soc-panel-title">Severity</h3></div>
-            <div style={{ width: '100%', height: 250, boxSizing: 'border-box' }}>
+            <div className="soc-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="soc-panel-title">Severity</h3>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Distribution</span>
+            </div>
+            <div style={{ width: '100%', height: 250, padding: '16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               {loading ? <div className="skeleton" style={{ width: '100%', height: '100%' }} /> : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={severityDistribution}
-                      dataKey="count"
-                      nameKey="severity"
-                      cx="50%"
-                      cy="45%"
-                      innerRadius={35}
-                      outerRadius={65}
-                      paddingAngle={4}
-                    >
-                      {severityDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[entry.severity?.toLowerCase()] || COLORS.info} />
-                      ))}
-                    </Pie>
-                    <Legend
-                      verticalAlign="bottom"
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(value) => <span style={{ color: '#94a3b8', fontSize: 11, textTransform: 'capitalize' }}>{value}</span>}
-                    />
-                    <RechartsTooltip
-                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 8, color: '#f1f5f9' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+                  {/* Donut Chart */}
+                  <div style={{ position: 'relative', width: 140, height: 140 }}>
+                    <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                      {(() => {
+                        const total = severityDistribution.reduce((acc, item) => acc + (item.count || 0), 0) || 1;
+                        let cumPercent = 0;
+                        return severityDistribution.map((item, idx) => {
+                          const percent = (item.count || 0) / total;
+                          const strokeDasharray = `${percent * 283} 283`;
+                          const strokeDashoffset = -cumPercent * 283;
+                          cumPercent += percent;
+                          const color = COLORS[item.severity?.toLowerCase()] || COLORS.info;
+                          return (
+                            <circle
+                              key={idx}
+                              cx="50" cy="50" r="45"
+                              fill="none"
+                              stroke={color}
+                              strokeWidth="10"
+                              strokeDasharray={strokeDasharray}
+                              strokeDashoffset={strokeDashoffset}
+                              style={{ transition: 'all 0.5s ease' }}
+                            />
+                          );
+                        });
+                      })()}
+                    </svg>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {severityDistribution.reduce((a, b) => a + (b.count || 0), 0)}
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase' }}>Alerts</span>
+                    </div>
+                  </div>
+                  {/* Legend */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {severityDistribution.map((item, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[item.severity?.toLowerCase()] || COLORS.info }} />
+                        <span style={{ color: '#cbd5e1', textTransform: 'capitalize', width: 60 }}>{item.severity}</span>
+                        <span style={{ color: '#94a3b8', fontWeight: 600 }}>{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Recent Alerts - Full Width */}
           <div key="table_alerts" className={`soc-panel ${isEditable?'edit-mode':''}`}>
             <div className="soc-panel-header"><h3 className="soc-panel-title">Recent Alerts</h3></div>
             <div style={{ overflow: 'auto', height: 'calc(100% - 40px)' }}>

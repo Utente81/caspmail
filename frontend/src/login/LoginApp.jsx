@@ -7,7 +7,7 @@ import { Mail, ShieldCheck, Settings } from 'lucide-react'
 import ParticleNetwork from './ParticleNetwork';
 
 const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer
-  || 'https://auth.secure.internal/realms/caspermail'
+  || 'https://auth.caspmail.com/realms/caspermail'
 
 const APPS = [
   {

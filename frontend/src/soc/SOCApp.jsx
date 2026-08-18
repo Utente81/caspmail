@@ -48,7 +48,7 @@ export default function SOCApp() {
           const params = new URLSearchParams(window.location.search)
           const code = params.get('code')
           const verifier = sessionStorage.getItem('soc_pkce_verifier')
-          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
 
           const res = await fetch(`${issuer}/protocol/openid-connect/token`, {
             method: 'POST',

@@ -139,7 +139,7 @@ export default function MailApp() {
           const params = new URLSearchParams(window.location.search)
           const code = params.get('code')
           const verifier = sessionStorage.getItem('mail_pkce_verifier')
-          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
 
           const res = await fetch(`${issuer}/protocol/openid-connect/token`, {
             method: 'POST',
@@ -241,7 +241,7 @@ async function startLogin() {
   const challenge = await generateChallenge(verifier)
   sessionStorage.setItem('mail_pkce_verifier', verifier)
 
-  const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+  const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
   const url = new URL(`${issuer}/protocol/openid-connect/auth`)
   url.searchParams.set('client_id', 'caspermail-web')
   url.searchParams.set('redirect_uri', window.location.origin + '/console/')

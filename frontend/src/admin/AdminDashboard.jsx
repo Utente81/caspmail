@@ -120,7 +120,7 @@ export default function AdminDashboard() {
     sessionStorage.clear()
     const params = new URLSearchParams({ client_id: clientId, post_logout_redirect_uri: window.location.origin + '/console/login' })
     if (idToken && idToken !== 'null' && idToken !== 'undefined') params.set('id_token_hint', idToken)
-    const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+    const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
     window.location.href = `${ISSUER}/protocol/openid-connect/logout?${params.toString()}`
   }
 

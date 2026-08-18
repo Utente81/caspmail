@@ -190,20 +190,33 @@ export default function SOCOverview() {
   const alerts = (data?.recent_alerts && data.recent_alerts.length > 0) ? data.recent_alerts : MOCK_DATA.recent_alerts
   const cases = (data?.recent_cases && data.recent_cases.length > 0) ? data.recent_cases : MOCK_DATA.recent_cases
   const health = (data?.system_health && data.system_health.length > 0) ? data.system_health : MOCK_DATA.system_health
-  const eventsTrend = (data?.events_trend && data.events_trend.length > 0) ? data.events_trend : [
-    { time_bucket: new Date(Date.now() - 3600000 * 8).toISOString(), event_count: 320 },
-    { time_bucket: new Date(Date.now() - 3600000 * 6).toISOString(), event_count: 540 },
-    { time_bucket: new Date(Date.now() - 3600000 * 4).toISOString(), event_count: 820 },
-    { time_bucket: new Date(Date.now() - 3600000 * 2).toISOString(), event_count: 1240 },
-    { time_bucket: new Date().toISOString(), event_count: 1680 }
-  ]
-  const severityDistribution = (data?.severity_distribution && data.severity_distribution.length > 0) ? data.severity_distribution : [
-    { severity: 'critical', count: 4 },
-    { severity: 'high', count: 12 },
-    { severity: 'medium', count: 28 },
-    { severity: 'low', count: 45 },
-    { severity: 'info', count: 90 }
-  ]
+  const rawEvents = data?.events_trend
+  const eventsTrend = (Array.isArray(rawEvents) && rawEvents.length > 0)
+    ? rawEvents.map(d => ({
+        time_bucket: d.time_bucket || new Date().toISOString(),
+        event_count: Math.max(0, parseInt(d.event_count || '0', 10) || 0)
+      }))
+    : [
+        { time_bucket: new Date(Date.now() - 3600000 * 8).toISOString(), event_count: 320 },
+        { time_bucket: new Date(Date.now() - 3600000 * 6).toISOString(), event_count: 540 },
+        { time_bucket: new Date(Date.now() - 3600000 * 4).toISOString(), event_count: 820 },
+        { time_bucket: new Date(Date.now() - 3600000 * 2).toISOString(), event_count: 1240 },
+        { time_bucket: new Date().toISOString(), event_count: 1680 }
+      ]
+
+  const rawSev = data?.severity_distribution
+  const severityDistribution = (Array.isArray(rawSev) && rawSev.length > 0)
+    ? rawSev.map(d => ({
+        severity: String(d.severity || 'info').toLowerCase(),
+        count: Math.max(0, parseInt(d.count || '0', 10) || 0)
+      }))
+    : [
+        { severity: 'critical', count: 4 },
+        { severity: 'high', count: 12 },
+        { severity: 'medium', count: 28 },
+        { severity: 'low', count: 45 },
+        { severity: 'info', count: 90 }
+      ]
 
   const onLayoutChange = (currentLayout, allLayouts) => {
     setLayouts(allLayouts);
@@ -350,16 +363,20 @@ export default function SOCOverview() {
 
                     {/* Dynamic Area & Path */}
                     {(() => {
-                      const dataPts = eventsTrend;
-                      const maxVal = Math.max(...dataPts.map(d => d.event_count), 2000);
+                      const dataPts = eventsTrend.length > 0 ? eventsTrend : [
+                        { time_bucket: new Date().toISOString(), event_count: 100 }
+                      ];
+                      const maxVal = Math.max(...dataPts.map(d => Number(d.event_count) || 0), 100) || 100;
                       const widthStep = 440 / Math.max(dataPts.length - 1, 1);
                       const points = dataPts.map((d, i) => {
                         const x = 40 + i * widthStep;
-                        const y = 150 - (d.event_count / maxVal) * 120;
-                        return { x, y, val: d.event_count, time: d.time_bucket };
+                        const val = Number(d.event_count) || 0;
+                        const y = 150 - Math.min(120, (val / maxVal) * 120);
+                        return { x, y: isNaN(y) ? 150 : y, val, time: d.time_bucket };
                       });
                       const pathD = points.reduce((acc, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`, '');
-                      const areaD = `${pathD} L ${points[points.length - 1]?.x || 480} 150 L 40 150 Z`;
+                      const lastX = points[points.length - 1]?.x || 480;
+                      const areaD = `${pathD} L ${lastX} 150 L 40 150 Z`;
 
                       return (
                         <g>

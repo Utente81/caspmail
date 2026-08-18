@@ -1,4 +1,4 @@
-const ISSUER = 'https://auth.secure.internal/realms/caspermail';
+const ISSUER = 'https://auth.caspmail.com/realms/caspermail';
 
 export function logout(clientId) {
   const idToken = sessionStorage.getItem('caspmail_id_token');

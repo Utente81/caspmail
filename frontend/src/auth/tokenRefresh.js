@@ -7,7 +7,7 @@
  */
 
 const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer
-  || 'https://auth.secure.internal/realms/caspermail'
+  || 'https://auth.caspmail.com/realms/caspermail'
 
 let refreshPromise = null // deduplicate concurrent refresh calls
 

@@ -51,7 +51,7 @@ export default function AdminApp() {
           const verifier = sessionStorage.getItem('admin_pkce_verifier')
           const clientId = 'caspermail-admin'
           const redirectUri = window.location.origin + '/console/admin'
-          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+          const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
 
           const res = await fetch(`${issuer}/protocol/openid-connect/token`, {
             method: 'POST',
@@ -116,7 +116,7 @@ async function startLogin() {
   const challenge = await generateChallenge(verifier)
   sessionStorage.setItem('admin_pkce_verifier', verifier)
 
-  const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.secure.internal/realms/caspermail'
+  const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
   const clientId = 'caspermail-admin'
   const redirectUri = window.location.origin + '/console/admin'
   const state = Math.random().toString(36).slice(2)

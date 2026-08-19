@@ -235,8 +235,9 @@ export default function MailKeys({ keyPair, onKeyChange }) {
         {localOk && (
           <div className="mail-keys-actions" style={{ marginTop: '2rem', justifyContent: 'flex-end', gap: '12px' }}>
             <button onClick={handleExportKeyPair} style={{ 
-              display: 'flex', alignItems: 'center', gap: '8px', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', 
               padding: '10px 20px', 
+              minWidth: '220px',
               background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', 
               color: 'white', 
               border: 'none', 
@@ -252,8 +253,24 @@ export default function MailKeys({ keyPair, onKeyChange }) {
             >
               <Download size={16} /> Export KeyPair (.pem)
             </button>
-            <button className="mail-btn-danger" onClick={handleDeleteLocal}>
-              <Trash2 size={13} /> Remove Local Key
+            <button onClick={handleDeleteLocal} style={{ 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', 
+              padding: '10px 20px', 
+              minWidth: '220px',
+              background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '8px', 
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 15px rgba(239, 68, 68, 0.4)',
+              transition: 'all 0.2s ease-in-out'
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(239, 68, 68, 0.6)'; }}
+            onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(239, 68, 68, 0.4)'; }}
+            >
+              <Trash2 size={16} /> Remove Local Key
             </button>
           </div>
         )}

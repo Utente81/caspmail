@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Building2, Users, Globe, AlertTriangle, RefreshCw } from 'lucide-react'
 
-function api(path) {
+function api(path, options = {}) {
   const token = sessionStorage.getItem('caspmail_access_token')
+  const headers = token ? { Authorization: `Bearer ${token}`, ...options.headers } : { ...options.headers }
+  if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
   return fetch(`/api/admin${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    ...options,
+    headers,
   })
 }
 
@@ -63,6 +68,8 @@ export default function AdminOverview({ onNavigate }) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+
+
   async function handleRetentionPurge() {
     if (!window.confirm("WARNING: This will permanently wipe all non-legal-hold deleted messages older than 30 days. This action cannot be undone. Proceed?")) return;
     setPurging(true);
@@ -80,6 +87,7 @@ export default function AdminOverview({ onNavigate }) {
       setPurging(false);
     }
   }
+
 
   return (
     <div className="adm-workspace">
@@ -114,7 +122,7 @@ export default function AdminOverview({ onNavigate }) {
         <KPICard label="Users with PGP Keys" value={metrics?.users_with_keys} icon={Globe} color="var(--green)" loading={loading} />
       </div>
 
-      <h3 className="adm-section-title" style={{ marginTop: '24px' }}>Compliance & Data Retention</h3>
+      <h3 className="adm-section-title" style={{ marginTop: '24px' }}>Compliance Tools</h3>
       <div className="adm-kpi-grid">
         <div className="adm-quick-card" style={{ cursor: 'pointer', border: '1px solid var(--red)' }} onClick={purging ? undefined : handleRetentionPurge}>
           <span className="adm-quick-icon">🗑️</span>

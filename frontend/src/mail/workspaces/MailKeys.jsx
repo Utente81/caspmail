@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Key, ShieldCheck, AlertCircle, RefreshCw, Trash2, CheckCircle, Download, Upload } from 'lucide-react'
 import {
-  generateKeyPair, exportPublicKeyPem, fingerprintPublicKey,
+  generateKeyPair, exportPublicKeyPem, exportPrivateKeyPem, fingerprintPublicKey,
   storeKeyPair, loadKeyPair, deleteKeyPair,
   encryptPrivateKey, decryptPrivateKey, importPublicKeyPem
 } from '../crypto.js'
@@ -113,6 +113,28 @@ export default function MailKeys({ keyPair, onKeyChange }) {
     }
   }
 
+  async function handleExportKeyPair() {
+    if (!localKey) return;
+    try {
+      const pubPem = await exportPublicKeyPem(localKey.publicKey)
+      const privPem = await exportPrivateKeyPem(localKey.privateKey)
+      const combined = `${pubPem}\n\n${privPem}`
+      
+      const blob = new Blob([combined], { type: 'application/x-pem-file' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `caspmail-keypair-${new Date().toISOString().split('T')[0]}.pem`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setSuccess('KeyPair exported successfully.')
+    } catch (e) {
+      setError('Failed to export keypair: ' + e.message)
+    }
+  }
+
   async function handleDeleteLocal() {
     if (!confirm('Delete local private key? You will have to restore it from your backup password.')) return
     await deleteKeyPair()
@@ -211,7 +233,25 @@ export default function MailKeys({ keyPair, onKeyChange }) {
         </div>
 
         {localOk && (
-          <div className="mail-keys-actions" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
+          <div className="mail-keys-actions" style={{ marginTop: '2rem', justifyContent: 'flex-end', gap: '12px' }}>
+            <button onClick={handleExportKeyPair} style={{ 
+              display: 'flex', alignItems: 'center', gap: '8px', 
+              padding: '10px 20px', 
+              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '8px', 
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)',
+              transition: 'all 0.2s ease-in-out'
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(99, 102, 241, 0.6)'; }}
+            onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(99, 102, 241, 0.4)'; }}
+            >
+              <Download size={16} /> Export KeyPair (.pem)
+            </button>
             <button className="mail-btn-danger" onClick={handleDeleteLocal}>
               <Trash2 size={13} /> Remove Local Key
             </button>

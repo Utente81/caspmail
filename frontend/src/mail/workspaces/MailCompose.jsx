@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Send, Lock, AlertCircle, CheckCircle, Paperclip, X, Save } from 'lucide-react'
-import { encryptMessage, importPublicKeyPem } from '../crypto.js'
+import { encryptMessage, encryptAttachment, importPublicKeyPem } from '../crypto.js'
 
 function apiFetch(path, opts = {}) {
   const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
@@ -14,6 +14,60 @@ function apiFetch(path, opts = {}) {
   })
 }
 
+const RichTextEditor = ({ value, onChange }) => {
+  const editorRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (editorRef.current && value !== editorRef.current.innerHTML) {
+      editorRef.current.innerHTML = value;
+    }
+  }, [value]);
+
+  const handleInput = () => {
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  const execCmd = (cmd, arg = null) => {
+    document.execCommand(cmd, false, arg);
+    if (editorRef.current) {
+      editorRef.current.focus();
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  const btnStyle = {
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: '#e2e8f0',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.85rem'
+  };
+
+  return (
+    <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', background: 'rgba(0,0,0,0.1)' }}>
+      <div style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => execCmd('bold')} title="Bold" style={btnStyle}><b>B</b></button>
+        <button type="button" onClick={() => execCmd('italic')} title="Italic" style={btnStyle}><i>I</i></button>
+        <button type="button" onClick={() => execCmd('underline')} title="Underline" style={btnStyle}><u>U</u></button>
+        <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+        <button type="button" onClick={() => execCmd('insertUnorderedList')} title="Bullet List" style={btnStyle}>• List</button>
+        <button type="button" onClick={() => execCmd('insertOrderedList')} title="Numbered List" style={btnStyle}>1. List</button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        onInput={handleInput}
+        onBlur={handleInput}
+        style={{ padding: '12px', minHeight: '150px', outline: 'none', color: '#e2e8f0', fontSize: '0.9rem', lineHeight: '1.5', overflowY: 'auto' }}
+      />
+    </div>
+  );
+};
+
 export default function MailCompose({ keyPair, initialDraft, composeData, onDiscard, onSent }) {
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
@@ -23,6 +77,7 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
   const [sent, setSent] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [contacts, setContacts] = useState([])
+  const [ttl, setTtl] = useState(null)
 
   React.useEffect(() => {
     if (initialDraft) {
@@ -55,15 +110,14 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
         return new Promise((resolve) => {
           const reader = new FileReader()
           reader.onload = (event) => {
-            const base64Data = event.target.result.split(',')[1]
             resolve({
               name: f.name,
               type: f.type || 'application/octet-stream',
               size: f.size,
-              data: base64Data
+              buffer: event.target.result
             })
           }
-          reader.readAsDataURL(f)
+          reader.readAsArrayBuffer(f)
         })
       }))
       setAttachments(prev => [...prev, ...newFiles])
@@ -165,22 +219,31 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
         throw new Error(`Recipient ${to} has not set up their encryption keys yet.`)
       }
 
-      // Se ci sono allegati, convertiamo il body in un JSON contenente sia il testo che i file in base64.
-      let finalBody = body
-      if (attachments.length > 0) {
-        finalBody = JSON.stringify({
-          text: body,
-          attachments: attachments
-        })
-      }
-
       // Encrypt for sender ONCE (to save a readable copy in Sent)
-      const senderPayload = await encryptMessage(keyPair.publicKey, subject, finalBody)
+      const senderPayload = await encryptMessage(keyPair.publicKey, subject, body)
 
-      // Iterate over all returned keys (useful if "to" is an Alias mapping to multiple members)
       for (let i = 0; i < keys.length; i++) {
         const recipientPublicKey = await importPublicKeyPem(keys[i].public_key)
-        const payload = await encryptMessage(recipientPublicKey, subject, finalBody)
+        const payload = await encryptMessage(recipientPublicKey, subject, body)
+        
+        // Encrypt attachments
+        const encryptedAttachments = []
+        for (let att of attachments) {
+           const recAtt = await encryptAttachment(recipientPublicKey, att.buffer)
+           let sndAtt = null
+           if (i === 0) {
+             sndAtt = await encryptAttachment(keyPair.publicKey, att.buffer)
+           }
+           encryptedAttachments.push({
+             name: att.name,
+             type: att.type,
+             size: att.size,
+             recipient_data: recAtt.data,
+             recipient_nonce: recAtt.nonce,
+             sender_data: sndAtt ? sndAtt.data : null,
+             sender_nonce: sndAtt ? sndAtt.nonce : null
+           })
+        }
 
         // Send
         await apiFetch('/api/e2ee/messages', {
@@ -191,7 +254,9 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
             // Only save the sender copy on the first message so it doesn't duplicate in "Sent"
             sender_subject_encrypted: i === 0 ? senderPayload.subject_encrypted : null,
             sender_body_encrypted: i === 0 ? senderPayload.body_encrypted : null,
-            sender_nonce: i === 0 ? senderPayload.nonce : null
+            sender_nonce: i === 0 ? senderPayload.nonce : null,
+            attachments: encryptedAttachments,
+            expires_at: ttl ? new Date(Date.now() + ttl * 3600000).toISOString() : null
           })
         })
       }
@@ -219,13 +284,8 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
     setSending(true)
 
     try {
-      let finalBody = body
-      if (attachments.length > 0) {
-        finalBody = JSON.stringify({ text: body, attachments: attachments })
-      }
-      
       // Encrypt with OWN public key
-      const payload = await encryptMessage(keyPair.publicKey, subject || '(No subject)', finalBody)
+      const payload = await encryptMessage(keyPair.publicKey, subject || '(No subject)', body)
       
       if (initialDraft) {
         await apiFetch(`/api/e2ee/drafts/${initialDraft.id}`, {
@@ -306,14 +366,7 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
           </div>
           <div className="mail-form-group">
             <label className="mail-label">Message</label>
-            <textarea
-              className="mail-textarea"
-              rows={8}
-              placeholder="Write your message here…"
-              value={body}
-              onChange={e => setBody(e.target.value)}
-              required
-            />
+            <RichTextEditor value={body} onChange={setBody} />
           </div>
 
           {attachments.length > 0 && (
@@ -340,6 +393,20 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
                 <Paperclip size={14} /> Attach Files
                 <input type="file" multiple onChange={handleFileChange} style={{ display: 'none' }} />
               </label>
+              <select
+                value={ttl || ''}
+                onChange={e => setTtl(e.target.value ? parseInt(e.target.value) : null)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px', color: '#e2e8f0', padding: '8px', fontSize: '0.85rem', outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="" style={{color: 'black'}}>No Expiration (Keep Forever)</option>
+                <option value="1" style={{color: 'black'}}>1 Hour (Burn After Reading)</option>
+                <option value="24" style={{color: 'black'}}>24 Hours (1 Day)</option>
+                <option value="168" style={{color: 'black'}}>168 Hours (7 Days)</option>
+              </select>
               <button type="button" onClick={handleSaveDraft} className="mail-btn-secondary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#e2e8f0', fontSize: '0.85rem' }} disabled={sending}>
                 <Save size={14} /> Save Draft
               </button>

@@ -204,6 +204,38 @@ export default async function adminRoutes(app) {
     reply.send({ purged_count: rowCount });
   });
 
+  app.post('/simulate-attack', adminGuard, async (req, reply) => {
+    let tenantId = await getTenantId(req);
+    if (!tenantId) tenantId = 'system';
+    
+    const { type, message } = req.body || {};
+    const severity = 'critical';
+    const source_ip = '10.0.0.99';
+    const eventType = type || 'manual_simulation';
+    const { rows: evRows } = await pool.query(
+      `INSERT INTO soc_events (tenant_id, type, severity, source_ip, message)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [tenantId, eventType, severity, source_ip, message || 'Manual simulated attack']
+    );
+    
+    await pool.query(
+      `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
+       VALUES ($1, $2, $3, $4, 'open')`,
+      [tenantId, evRows[0].id, severity, message || 'Manual simulated attack']
+    );
+    
+    if (app.io) {
+      app.io.emit('soc:new_alert', { title: message || 'Manual simulated attack', ip: source_ip });
+    }
+
+    // Trigger SOAR Playbooks asynchronously
+    import('../services/soar.mjs').then(({ processSoarPlaybooks }) => {
+      processSoarPlaybooks(tenantId, eventType, { source_ip, user_email: null, message });
+    }).catch(console.error);
+    
+    reply.send({ ok: true, message: 'Simulated attack injected into SIEM' });
+  });
+
   // ─── Tenants ──────────────────────────────────────────────────────────────
 
   app.get('/tenants', adminGuard, async (req, reply) => {

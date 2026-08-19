@@ -191,9 +191,10 @@ export default async function mailRoutes(app) {
     const unread = req.query.unread === 'true';
 
     let query = `
-      SELECT id, from_email, to_email, subject_encrypted, nonce, created_at, read_at, sender_flags, recipient_flags, sender_deleted_at, recipient_deleted_at, sender_subject_encrypted, sender_nonce
+      SELECT id, from_email, to_email, subject_encrypted, nonce, created_at, read_at, sender_flags, recipient_flags, sender_deleted_at, recipient_deleted_at, sender_subject_encrypted, sender_nonce, expires_at
       FROM e2ee_messages
       WHERE tenant_id = $1 AND deleted_at IS NULL
+        AND (expires_at IS NULL OR expires_at > NOW())
         AND (from_email != $2 OR COALESCE((sender_flags->>'cleared')::boolean, false) = false)
         AND (to_email != $2 OR COALESCE((recipient_flags->>'cleared')::boolean, false) = false)
     `;
@@ -258,7 +259,7 @@ export default async function mailRoutes(app) {
     const user = await getUser(req.user);
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
-    const { to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce } = req.body || {};
+    const { to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, attachments, expires_at } = req.body || {};
     if (!to_email || !subject_encrypted || !body_encrypted || !nonce) {
       return reply.status(400).send({
         error: 'to_email, subject_encrypted, body_encrypted, and nonce are required',
@@ -266,11 +267,11 @@ export default async function mailRoutes(app) {
     }
 
     // Recipient must exist in the same tenant
-    const recipient = await pool.query(
+    const res = await pool.query(
       'SELECT id FROM users WHERE tenant_id = $1 AND email = $2',
       [user.tenant_id, to_email]
     );
-    if (recipient.rows.length === 0) {
+    if (res.rowCount === 0) {
       return reply.status(404).send({ error: 'Recipient not found in your tenant' });
     }
 
@@ -304,10 +305,10 @@ export default async function mailRoutes(app) {
     const id = uuidv4();
     const { rows } = await pool.query(
       `INSERT INTO e2ee_messages
-         (id, tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         (id, tenant_id, from_email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags, attachments, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
-      [id, user.tenant_id, user.email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags]
+      [id, user.tenant_id, user.email, to_email, subject_encrypted, body_encrypted, nonce, sender_subject_encrypted, sender_body_encrypted, sender_nonce, recipient_flags, attachments ? JSON.stringify(attachments) : '[]', expires_at || null]
     );
 
     reply.status(201).send(rows[0]);
@@ -322,14 +323,14 @@ export default async function mailRoutes(app) {
     const email = req.params.email;
 
     // Check if it's an alias
-    const aliasRes = await pool.query(
+    const res = await pool.query(
       'SELECT members FROM organization_aliases WHERE tenant_id = $1 AND alias_email = $2',
       [user.tenant_id, email]
     );
 
     let emailsToFetch = [email];
-    if (aliasRes.rowCount > 0 && Array.isArray(aliasRes.rows[0].members)) {
-      emailsToFetch = aliasRes.rows[0].members;
+    if (res.rowCount > 0 && Array.isArray(res.rows[0].members)) {
+      emailsToFetch = res.rows[0].members;
     }
 
     if (emailsToFetch.length === 0) {
@@ -355,7 +356,8 @@ export default async function mailRoutes(app) {
        WHERE id = $1
          AND tenant_id = $2
          AND (to_email = $3 OR from_email = $3)
-         AND deleted_at IS NULL`,
+         AND deleted_at IS NULL
+         AND (expires_at IS NULL OR expires_at > NOW())`,
       [req.params.id, user.tenant_id, user.email]
     );
 
@@ -367,7 +369,7 @@ export default async function mailRoutes(app) {
 
     // Mark as read if the recipient is viewing it
     if (msg.to_email === user.email && !msg.read_at) {
-      await pool.query(
+      const res = await pool.query(
         'UPDATE e2ee_messages SET read_at = NOW() WHERE id = $1',
         [req.params.id]
       );
@@ -469,9 +471,9 @@ export default async function mailRoutes(app) {
     if (!user) return reply.status(404).send({ error: 'User not found' });
     const { ids, flags } = req.body;
     if (!ids || !Array.isArray(ids) || !flags) return reply.status(400).send({ error: 'Invalid payload' });
-    await pool.query(
-      "UPDATE e2ee_messages SET sender_flags = CASE WHEN from_email = $2 THEN COALESCE(sender_flags, '{}'::jsonb) || $3::jsonb ELSE sender_flags END, recipient_flags = CASE WHEN to_email = $2 THEN COALESCE(recipient_flags, '{}'::jsonb) || $3::jsonb ELSE recipient_flags END WHERE tenant_id = $1 AND id = ANY($4) AND (from_email = $2 OR to_email = $2)" 
-    , [user.tenant_id, user.email, JSON.stringify(flags), ids]);
+    const res = await pool.query(
+      "UPDATE e2ee_messages SET sender_flags = CASE WHEN from_email = $2 THEN COALESCE(sender_flags, '{}'::jsonb) || $3::jsonb ELSE sender_flags END, recipient_flags = CASE WHEN to_email = $2 THEN COALESCE(recipient_flags, '{}'::jsonb) || $3::jsonb ELSE recipient_flags END, sender_deleted_at = CASE WHEN from_email = $2 THEN NULL ELSE sender_deleted_at END, recipient_deleted_at = CASE WHEN to_email = $2 THEN NULL ELSE recipient_deleted_at END WHERE tenant_id = $1 AND id = ANY($4::uuid[]) AND (from_email = $2 OR to_email = $2)" 
+    , [user.tenant_id, user.email, JSON.stringify(flags), ids]); console.log("UPDATE BULK FLAGS", {ids, flags, email: user.email, updated: res.rowCount});
     reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
 
@@ -480,8 +482,8 @@ export default async function mailRoutes(app) {
     if (!user) return reply.status(404).send({ error: 'User not found' });
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids)) return reply.status(400).send({ error: 'Invalid payload' });
-    await pool.query(
-      "UPDATE e2ee_messages SET sender_deleted_at = CASE WHEN from_email = $2 THEN NOW() ELSE sender_deleted_at END, recipient_deleted_at = CASE WHEN to_email = $2 THEN NOW() ELSE recipient_deleted_at END WHERE tenant_id = $1 AND id = ANY($3) AND (from_email = $2 OR to_email = $2)" 
+    const res = await pool.query(
+      "UPDATE e2ee_messages SET sender_deleted_at = CASE WHEN from_email = $2 THEN NOW() ELSE sender_deleted_at END, recipient_deleted_at = CASE WHEN to_email = $2 THEN NOW() ELSE recipient_deleted_at END WHERE tenant_id = $1 AND id = ANY($3::uuid[]) AND (from_email = $2 OR to_email = $2)" 
     , [user.tenant_id, user.email, ids]);
     reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });

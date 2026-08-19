@@ -32,274 +32,8 @@ function apiDelete(path) {
   })
 }
 
-function TimeAgo({ iso }) {
-  const d = new Date(iso)
-  const diff = Date.now() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return <span>just now</span>
-  if (mins < 60) return <span>{mins}m ago</span>
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return <span>{hrs}h ago</span>
-  return <span>{d.toLocaleDateString()}</span>
-}
-
-function MessageList({ messages, onSelect, selected, folder, checkedIds, setCheckedIds }) {
-  if (!messages.length) {
-    return (
-      <div className="mail-empty">
-        <Mail size={36} className="mail-empty-icon" />
-        <p>{folder === 'trash' ? 'Trash is empty' : folder === 'sent' ? 'No sent messages' : 'Inbox is empty'}</p>
-      </div>
-    )
-  }
-  return (
-    <ul className="mail-msg-list">
-      {messages.map(msg => (
-        <li
-          key={msg.id}
-          className={`mail-msg-item${selected?.id === msg.id ? ' selected' : ''}${(!msg.read_at && folder === 'inbox') ? ' unread' : ''}`}
-          onClick={() => onSelect(msg)}
-          draggable={true}
-          onDragStart={(e) => {
-            if (checkedIds.has(msg.id)) {
-              e.dataTransfer.setData('text/plain', Array.from(checkedIds).join(','));
-            } else {
-              e.dataTransfer.setData('text/plain', String(msg.id));
-            }
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-        >
-          <input type="checkbox" onClick={(e) => e.stopPropagation()} onChange={(e) => { const newIds = new Set(checkedIds); if (e.target.checked) newIds.add(msg.id); else newIds.delete(msg.id); setCheckedIds(newIds); }} checked={checkedIds.has(msg.id)} style={{marginRight: '12px'}} /><div className="mail-msg-from">{folder === 'sent' ? `To: ${msg.to_email}` : `From: ${msg.from_email}`}</div>
-          <div className="mail-msg-meta">
-            <span className="mail-msg-subject">
-              <Lock size={10} className="mail-lock-icon" />
-              Encrypted
-            </span>
-            <TimeAgo iso={msg.created_at} />
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, onCompose, folder }) {
-  const [decrypted, setDecrypted] = useState(null)
-  const [decError, setDecError] = useState(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!msg) return
-    setDecrypted(null)
-    setDecError(null)
-
-    if (!keyPair) {
-      setDecError('No decryption key loaded. Go to Security Keys to generate your keypair.')
-      return
-    }
-
-    setLoading(true)
-    apiGet(`/api/e2ee/messages/${msg.id}`)
-      .then(full => decryptMessage(keyPair.privateKey, full.subject_encrypted, full.body_encrypted, full.nonce))
-      .then(plain => setDecrypted(plain))
-      .catch(err => setDecError('Could not decrypt this message. It may have been encrypted with a different key.'))
-      .finally(() => setLoading(false))
-  }, [msg?.id, keyPair])
-
-  if (!msg) return null
-
-  function handleDelete() {
-    if (folder === 'trash') {
-      if (window.confirm('Permanently delete this message? This action cannot be undone.')) {
-        apiDelete(`/api/e2ee/messages/${msg.id}`).then(() => onDelete(msg.id)).catch(e => alert(e.message))
-      }
-    } else {
-      apiPatch(`/api/e2ee/messages/${msg.id}/trash`).then(() => onDelete(msg.id)).catch(e => alert(e.message))
-    }
-  }
-
-  async function handleReportPhishing() {
-    if (!window.confirm('Report this message as a phishing attempt to the SOC team?')) return;
-    try {
-      const res = await fetch(`/api/v4/soc/simulations/report/${msg.id}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
-      });
-      const data = await res.json();
-      alert(data.message || 'Reported');
-      onDelete(msg.id); // Remove from view
-    } catch (err) {
-      alert('Error reporting phishing: ' + err.message);
-    }
-  }
-
-  function handleReply() {
-    if (!decrypted) return
-    let oldBody = decrypted.body
-    try {
-      const parsed = JSON.parse(decrypted.body)
-      oldBody = parsed.text
-    } catch (e) {}
-    
-    const replyBody = `\n\n--- Original Message ---\nFrom: ${msg.from_email}\nDate: ${new Date(msg.created_at).toLocaleString()}\n\n${oldBody}`
-    const replySubject = decrypted.subject.startsWith('Re:') ? decrypted.subject : `Re: ${decrypted.subject}`
-    
-    onCompose({
-      to: msg.from_email,
-      subject: replySubject,
-      body: replyBody
-    })
-  }
-
-  function handleForward() {
-    if (!decrypted) return
-    let oldBody = decrypted.body
-    let attachments = []
-    try {
-      const parsed = JSON.parse(decrypted.body)
-      oldBody = parsed.text
-      attachments = parsed.attachments || [] || []
-    } catch (e) {}
-
-    const fwdBody = `\n\n--- Forwarded Message ---\nFrom: ${msg.from_email}\nDate: ${new Date(msg.created_at).toLocaleString()}\n\n${oldBody}`
-    const fwdSubject = decrypted.subject.startsWith('Fwd:') ? decrypted.subject : `Fwd: ${decrypted.subject}`
-
-    onCompose({
-      to: '',
-      subject: fwdSubject,
-      body: fwdBody,
-      attachments
-    })
-  }
-
-  return (
-    <div className="mail-detail">
-      <button className="mail-detail-back" onClick={onBack}>
-        <ChevronLeft size={14} /> Back
-      </button>
-      <div className="mail-detail-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div className="mail-detail-from">{folder === 'sent' ? `To: ${msg.to_email}` : `From: ${msg.from_email}`}</div>
-          <div className="mail-detail-time">{new Date(msg.created_at).toLocaleString()}</div>
-        </div>
-        <div style={{display: 'flex', gap: '4px'}}>
-          <button onClick={handleReply} className="mail-btn-icon" title="Reply" style={{color: '#60a5fa'}}>
-            <Reply size={16} />
-          </button>
-          <button onClick={handleForward} className="mail-btn-icon" title="Forward" style={{color: '#60a5fa'}}>
-            <Forward size={16} />
-          </button>
-          <button onClick={handleReportPhishing} className="mail-btn-icon" title="Report Phishing" style={{color: '#ef4444', border: '1px solid #ef444433', borderRadius: '4px'}}>
-            <ShieldAlert size={16} />
-          </button>
-          <button onClick={() => onFlag(msg.id, {important: true})} className="mail-btn-icon" title="Mark Important" style={{color: '#fbbf24'}}>
-            <Star size={16} />
-          </button>
-          <button onClick={() => onFlag(msg.id, {archived: true})} className="mail-btn-icon" title="Archive" style={{color: '#94a3b8'}}>
-            <Archive size={16} />
-          </button>
-          <button onClick={() => onFlag(msg.id, {spam: true})} className="mail-btn-icon" title="Mark as Spam" style={{color: '#f97316'}}>
-            <AlertOctagon size={16} />
-          </button>
-          <button onClick={handleDelete} className="mail-btn-icon" style={{ color: '#ef4444' }} title={folder === 'trash' ? 'Permanently Delete' : 'Move to Trash'}>
-            {folder === 'trash' ? <XCircle size={16} /> : <Trash2 size={16} />}
-          </button>
-        </div>
-      </div>
-
-      {loading && <div className="mail-detail-loading"><div className="mail-spinner" /></div>}
-
-      {decError && (
-        <div className="mail-alert-error">
-          <AlertCircle size={14} />
-          {decError}
-        </div>
-      )}
-
-      {decrypted && (
-        <>
-          <div className="mail-detail-subject">
-            <Unlock size={13} className="mail-unlock-icon" />
-            {decrypted.subject}
-          </div>
-          
-          {/* Corpo del messaggio (supporto allegati) */}
-          {(() => {
-            let bodyText = decrypted.body
-            let attachments = []
-            
-            try {
-              const parsed = JSON.parse(decrypted.body)
-              if (parsed.text !== undefined) {
-                bodyText = parsed.text
-                attachments = parsed.attachments || []
-              }
-            } catch (e) {
-              // Non Ã¨ un JSON, fallback a testo semplice (email vecchie)
-            }
-
-            let isPhishing = false;
-            try {
-              if (bodyText) {
-                const lower = bodyText.toLowerCase();
-                if (
-                  lower.includes('aggiorna password') ||
-                  lower.includes('urgent password reset') ||
-                  lower.includes('http://fake-login') ||
-                  lower.includes('verify your account') ||
-                  (lower.includes('http://') && lower.includes('login'))
-                ) {
-                  isPhishing = true;
-                }
-              }
-            } catch (e) {}
-
-            const downloadAttachment = (att) => {
-              const link = document.createElement('a')
-              link.href = `data:${att.type};base64,${att.data}`
-              link.download = att.name
-              document.body.appendChild(link)
-              link.click()
-              document.body.removeChild(link)
-            }
-
-            return (
-              <>
-                {isPhishing && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <AlertOctagon size={24} style={{ color: '#ef4444' }} />
-                    <div>
-                      <h4 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 600 }}>Phishing Warning</h4>
-                      <p style={{ margin: 0, fontSize: '0.85rem' }}>This message contains suspicious links or keywords often associated with phishing attacks. Do not click on any links or provide personal information.</p>
-                    </div>
-                  </div>
-                )}
-                <div className="mail-detail-body" dangerouslySetInnerHTML={{ __html: bodyText }} />
-                {attachments.length > 0 && (
-                  <div className="mail-detail-attachments" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                    <h4 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Paperclip size={14} /> Attachments
-                    </h4>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {attachments.map((att, idx) => (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.85rem', gap: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                          <span>{att.name}</span>
-                          <button onClick={() => downloadAttachment(att)} title="Download" style={{ background: 'none', border: 'none', color: '#0ea5e9', cursor: 'pointer', padding: '4px', display: 'flex', borderRadius: '4px' }}>
-                            <Download size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )
-          })()}
-        </>
-      )}
-    </div>
-  )
-}
+import MessageList from './MessageList'
+import MessageDetail from './MessageDetail'
 
 export default function MailInbox({ keyPair, folder = 'inbox', refreshTrigger = 0, onCompose, onRead, folders = [] }) {
   const [messages, setMessages] = useState([])
@@ -349,6 +83,22 @@ export default function MailInbox({ keyPair, folder = 'inbox', refreshTrigger = 
   }
 
   function handleFlag(id, flags) {
+    const updatedMsgs = messages.map(m => {
+      if (m.id === id) {
+        const updated = { ...m };
+        if (updated.recipient_flags) updated.recipient_flags = { ...updated.recipient_flags, ...flags };
+        else updated.recipient_flags = { ...flags };
+        if (updated.sender_flags) updated.sender_flags = { ...updated.sender_flags, ...flags };
+        else updated.sender_flags = { ...flags };
+        return updated;
+      }
+      return m;
+    });
+    setMessages(updatedMsgs);
+    if (selected?.id === id) {
+      setSelected(updatedMsgs.find(m => m.id === id));
+    }
+
     apiPatch(`/api/e2ee/messages/${id}/flags`, { flags })
       .then(() => {
         if (folder === 'inbox' && (flags.archived || flags.spam)) {
@@ -357,10 +107,11 @@ export default function MailInbox({ keyPair, folder = 'inbox', refreshTrigger = 
            handleDeleteItem(id)
         } else if (folder === 'spam' && flags.spam === false) {
            handleDeleteItem(id)
-        } else {
-           alert('Action applied successfully')
         }
-      }).catch(e => alert(e.message))
+      }).catch(e => {
+        alert(e.message)
+        load(false)
+      })
   }
 
   const unread = messages.filter(m => !m.read_at).length
@@ -382,12 +133,29 @@ export default function MailInbox({ keyPair, folder = 'inbox', refreshTrigger = 
                   }
                 }
               }}><Trash2 size={14}/></button>
-              <select style={{fontSize:'0.8rem', padding:'4px', background:'rgba(255,255,255,0.1)', color:'#fff', border:'none', borderRadius:'4px'}} onChange={(e) => {
-                if (e.target.value) {
-                  apiPatch('/api/e2ee/messages/bulk/flags', { ids: Array.from(checkedIds), flags: { folder_id: e.target.value } }).then(()=>load(false));
+              <select value="" style={{fontSize:'0.85rem', padding:'6px 12px', background:'#1e293b', color:'#f8fafc', border:'1px solid #334155', borderRadius:'6px', cursor:'pointer'}} onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                
+                let req;
+                if (val === 'trash') {
+                  req = apiPatch('/api/e2ee/messages/bulk/trash', { ids: Array.from(checkedIds) });
+                } else if (val === 'archive') {
+                  req = apiPatch('/api/e2ee/messages/bulk/flags', { ids: Array.from(checkedIds), flags: { archived: true, spam: false, folder_id: null } });
+                } else if (val === 'spam') {
+                  req = apiPatch('/api/e2ee/messages/bulk/flags', { ids: Array.from(checkedIds), flags: { spam: true, archived: false, folder_id: null } });
+                } else if (val === 'inbox') {
+                  req = apiPatch('/api/e2ee/messages/bulk/flags', { ids: Array.from(checkedIds), flags: { archived: false, spam: false, folder_id: null } });
+                } else {
+                  req = apiPatch('/api/e2ee/messages/bulk/flags', { ids: Array.from(checkedIds), flags: { folder_id: val } });
                 }
+                req.then(()=>load(false));
               }}>
-                <option value="">Move to...</option>
+                <option value="" disabled>Move to...</option>
+                {folder !== 'inbox' && <option value="inbox">Inbox</option>}
+                {folder !== 'archive' && <option value="archive">Archive</option>}
+                {folder !== 'spam' && <option value="spam">Spam</option>}
+                {folder !== 'trash' && <option value="trash">Trash</option>}
                 {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>

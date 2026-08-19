@@ -194,34 +194,49 @@ export default function MailDashboard() {
                 onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('drag-over')}
                 onDrop={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('drag-over');
-                  const payload = e.dataTransfer.getData('text/plain');
-                  if (!payload) return;
-                  const ids = payload.split(','); console.log('DROPPED', ids, 'to folder', (typeof item !== 'undefined' ? item.id : (typeof f !== 'undefined' ? f.id : 'unknown')));
-                  const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
-                  if (item.id === 'trash') {
-                    fetch('/api/e2ee/messages/bulk/trash', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                      body: JSON.stringify({ ids })
-                    }).then(() => setRefreshTrigger(t => t + 1));
-                  } else {
-                    let flags = {};
-                    if (item.id === 'inbox') {
-                        flags = { archived: false, spam: false, folder_id: null };
-                    } else if (item.id === 'archive') {
-                        flags = { archived: true, spam: false, folder_id: null };
-                    } else if (item.id === 'spam') {
-                        flags = { spam: true, archived: false, folder_id: null };
-                    } else if (item.id === 'important') {
-                        flags = { important: true };
+                  try {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('drag-over');
+                    const payload = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+                    if (!payload) {
+                      setToasts(prev => [...prev, { id: Date.now(), message: "Drag failed: payload vuoto" }]);
+                      return;
                     }
-                    fetch('/api/e2ee/messages/bulk/flags', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                      body: JSON.stringify({ ids, flags })
-                    }).then(() => setRefreshTrigger(t => t + 1));
+                    const ids = payload.split(',');
+                    const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+                    if (!token) throw new Error("Token mancante");
+                    
+                    if (item.id === 'trash') {
+                      fetch('/api/e2ee/messages/bulk/trash', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ ids })
+                      }).then(r => {
+                          if(!r.ok) throw new Error("Server error " + r.status);
+                          setRefreshTrigger(t => t + 1);
+                      }).catch(err => setToasts(prev => [...prev, { id: Date.now(), message: err.toString() }]));
+                    } else {
+                      let flags = {};
+                      if (item.id === 'inbox') {
+                          flags = { archived: false, spam: false, folder_id: null };
+                      } else if (item.id === 'archive') {
+                          flags = { archived: true, spam: false, folder_id: null };
+                      } else if (item.id === 'spam') {
+                          flags = { spam: true, archived: false, folder_id: null };
+                      } else if (item.id === 'important') {
+                          flags = { important: true };
+                      }
+                      fetch('/api/e2ee/messages/bulk/flags', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ ids, flags })
+                      }).then(r => {
+                          if(!r.ok) throw new Error("Server error " + r.status);
+                          setRefreshTrigger(t => t + 1);
+                      }).catch(err => setToasts(prev => [...prev, { id: Date.now(), message: err.toString() }]));
+                    }
+                  } catch (err) {
+                    setToasts(prev => [...prev, { id: Date.now(), message: err.toString() }]);
                   }
                 }}
               >

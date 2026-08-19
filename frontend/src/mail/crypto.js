@@ -141,6 +141,27 @@ export async function decryptMessage(privateKey, subject_encrypted, body_encrypt
   return { subject, body }
 }
 
+export async function encryptAttachment(recipientPublicKey, fileBuffer) {
+  const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+  const rawAes = await crypto.subtle.exportKey('raw', aesKey)
+  const encryptedAesKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, recipientPublicKey, rawAes)
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encryptedData = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, fileBuffer)
+
+  return {
+    data: b64(encryptedData),
+    nonce: JSON.stringify({ k: b64(encryptedAesKey), iv: b64(iv) })
+  }
+}
+
+export async function decryptAttachment(privateKey, dataEncryptedB64, nonceStr) {
+  const { k, iv } = JSON.parse(nonceStr)
+  const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, unb64(k))
+  const aesKey = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt'])
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, aesKey, unb64(dataEncryptedB64))
+  return new Uint8Array(decrypted)
+}
+
 function b64(buf) {
   const bytes = new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer ?? buf)
   let binary = ''
@@ -220,3 +241,11 @@ export async function decryptPrivateKey(encryptedB64, saltB64, password) {
     ['decrypt']
   )
 }
+
+export async function exportPrivateKeyPem(privateKey) {
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', privateKey)
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)))
+  const formatted = b64.match(/.{1,64}/g).join('\n')
+  return `-----BEGIN PRIVATE KEY-----\n${formatted}\n-----END PRIVATE KEY-----`
+}
+

@@ -129,7 +129,7 @@ export default async function mailRoutes(app) {
       const user = await getUser(req.user);
       if (!user) return reply.status(404).send({ error: 'User not found' });
 
-      const { public_key, key_fingerprint, private_key_encrypted, private_key_salt } = req.body || {};
+      const { public_key, key_fingerprint, private_key_encrypted, private_key_salt, escrow_data, escrow_aes, escrow_iv } = req.body || {};
       if (!public_key || !key_fingerprint) {
         return reply.status(400).send({ error: 'public_key and key_fingerprint are required' });
       }
@@ -140,16 +140,19 @@ export default async function mailRoutes(app) {
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO e2ee_keys (tenant_id, user_email, public_key, key_fingerprint, private_key_encrypted, private_key_salt)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO e2ee_keys (tenant_id, user_email, public_key, key_fingerprint, private_key_encrypted, private_key_salt, escrow_data, escrow_aes, escrow_iv)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (tenant_id, user_email)
          DO UPDATE SET public_key = EXCLUDED.public_key,
                        key_fingerprint = EXCLUDED.key_fingerprint,
                        private_key_encrypted = EXCLUDED.private_key_encrypted,
                        private_key_salt = EXCLUDED.private_key_salt,
+                       escrow_data = EXCLUDED.escrow_data,
+                       escrow_aes = EXCLUDED.escrow_aes,
+                       escrow_iv = EXCLUDED.escrow_iv,
                        created_at = NOW()
          RETURNING *`,
-        [user.tenant_id, user.email, public_key, key_fingerprint, finalEncryptedKey, private_key_salt || null]
+        [user.tenant_id, user.email, public_key, key_fingerprint, finalEncryptedKey, private_key_salt || null, escrow_data || null, escrow_aes || null, escrow_iv || null]
       );
 
       reply.status(201).send(rows[0]);
@@ -180,6 +183,33 @@ export default async function mailRoutes(app) {
     }
   });
 
+  app.get('/api/e2ee/corporate-key', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      const { rows } = await pool.query('SELECT public_key FROM corporate_master_keys WHERE tenant_id = $1', [user.tenant_id]);
+      if (rows.length === 0) return reply.status(404).send({ error: 'Corporate Master Key not found' });
+      reply.send(rows[0]);
+    } catch(e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  app.post('/api/e2ee/corporate-key', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      // In a real app, only SOC admins can post this.
+      const { public_key } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO corporate_master_keys (tenant_id, public_key) VALUES ($1, $2)
+         ON CONFLICT (tenant_id) DO UPDATE SET public_key = EXCLUDED.public_key RETURNING public_key`,
+         [user.tenant_id, public_key]
+      );
+      reply.send(rows[0]);
+    } catch(e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
   // ─── PFS PreKeys ────────────────────────────────────────────────────────────
   
   app.post('/api/e2ee/me/prekeys', authGuard, async (req, reply) => {
@@ -194,9 +224,9 @@ export default async function mailRoutes(app) {
         if (!k.prekey_id || !k.public_key || !k.private_key_encrypted) continue;
         const wrappedPrivate = await wrapKey(k.private_key_encrypted);
         await pool.query(
-          `INSERT INTO e2ee_prekeys (id, tenant_id, user_email, prekey_id, public_key, private_key_encrypted)
-           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-          [uuidv4(), user.tenant_id, user.email, k.prekey_id, k.public_key, wrappedPrivate]
+          `INSERT INTO e2ee_prekeys (id, tenant_id, user_email, prekey_id, public_key, private_key_encrypted, escrow_data, escrow_aes, escrow_iv)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+          [uuidv4(), user.tenant_id, user.email, k.prekey_id, k.public_key, wrappedPrivate, k.escrow_data || null, k.escrow_aes || null, k.escrow_iv || null]
         );
         count++;
       }
@@ -607,4 +637,46 @@ export default async function mailRoutes(app) {
     , [user.tenant_id, user.email, ids]);
     reply.send({ success: true }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
+
+  // ─── eDiscovery (Enterprise) ────────────────────────────────────────────────
+  
+  app.get('/api/e2ee/ediscovery/user/:email', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      // In a real scenario, check if `user` has SOC/Admin role
+      const targetEmail = req.params.email;
+      
+      // Fetch user's identity key and escrow data
+      const { rows: keyRows } = await pool.query(
+        'SELECT public_key, escrow_data, escrow_aes, escrow_iv FROM e2ee_keys WHERE tenant_id = $1 AND user_email = $2',
+        [user.tenant_id, targetEmail]
+      );
+      if (keyRows.length === 0) return reply.status(404).send({ error: 'User keys not found' });
+      const identityKey = keyRows[0];
+
+      // Fetch user's PFS PreKeys and escrow data
+      const { rows: prekeyRows } = await pool.query(
+        'SELECT prekey_id, public_key, escrow_data, escrow_aes, escrow_iv FROM e2ee_prekeys WHERE tenant_id = $1 AND user_email = $2',
+        [user.tenant_id, targetEmail]
+      );
+
+      // Fetch user's messages
+      const { rows: messages } = await pool.query(
+        `SELECT id, from_email as sender, to_email as recipient, subject_encrypted, body_encrypted, metadata_nonce as nonce, prekey_id, created_at 
+         FROM e2ee_messages 
+         WHERE tenant_id = $1 AND (to_email = $2 OR from_email = $2) 
+         ORDER BY created_at DESC LIMIT 100`,
+        [user.tenant_id, targetEmail]
+      );
+
+      reply.send({
+        identityKey,
+        prekeys: prekeyRows,
+        messages
+      });
+    } catch(e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
 }

@@ -298,3 +298,87 @@ export async function exportPrivateKeyPem(privateKey) {
   return `-----BEGIN PRIVATE KEY-----\n${formatted}\n-----END PRIVATE KEY-----`
 }
 
+// ── Enterprise Key Escrow (Shamir's Secret Sharing) ─────────────────────────
+import secrets from 'secrets.js-grempe';
+
+export async function generateCorporateMasterKey(sharesCount = 3, threshold = 2) {
+  // Generate RSA-4096 Master Key
+  const keyPair = await generateKeyPair();
+  const publicKeyPem = await exportPublicKeyPem(keyPair.publicKey);
+  const privateKeyPem = await exportPrivateKeyPem(keyPair.privateKey);
+  
+  // Convert private key PEM to Hex for Shamir sharing
+  const privateKeyHex = secrets.str2hex(privateKeyPem);
+  
+  // Split the private key into shares
+  const shares = secrets.share(privateKeyHex, sharesCount, threshold);
+  
+  return {
+    publicKeyPem,
+    shares // e.g. ["801xxx", "802yyy", "803zzz"] to be given to CEO, Admin, DPO
+  };
+}
+
+export async function unlockCorporateMasterKey(shares) {
+  try {
+    // Combine shares to reconstruct the private key HEX
+    const reconstructedHex = secrets.combine(shares);
+    const privateKeyPem = secrets.hex2str(reconstructedHex);
+    
+    // Import the reconstructed PEM into a CryptoKey
+    const b64 = privateKeyPem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+    const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    
+    return await crypto.subtle.importKey(
+      'pkcs8',
+      der,
+      { name: 'RSA-OAEP', hash: 'SHA-256' },
+      true,
+      ['decrypt']
+    );
+  } catch (e) {
+    console.error("Failed to reconstruct Master Key from shares", e);
+    throw new Error("Invalid or insufficient Shamir shares provided.");
+  }
+}
+
+export async function escrowPrivateKey(privateKey, corporatePublicKeyPem) {
+  // Extract user's private key as raw bytes
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', privateKey);
+  
+  // Encrypt the user's private key with a new AES key
+  const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const rawAes = await crypto.subtle.exportKey('raw', aesKey);
+  
+  // Encrypt the AES key with the Corporate Master Public Key
+  const corporatePublicKey = await importPublicKeyPem(corporatePublicKeyPem);
+  const encryptedAesKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, corporatePublicKey, rawAes);
+  
+  // Encrypt the PKCS8 private key with the AES key
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encryptedPkcs8 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, pkcs8);
+  
+  return {
+    escrow_data: b64(encryptedPkcs8),
+    escrow_aes: b64(encryptedAesKey),
+    escrow_iv: b64(iv)
+  };
+}
+
+export async function unescrowPrivateKey(corporateMasterPrivateKey, escrowDataB64, escrowAesB64, escrowIvB64) {
+  // Decrypt the AES key using the Corporate Master Private Key
+  const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, corporateMasterPrivateKey, unb64(escrowAesB64));
+  const aesKey = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
+  
+  // Decrypt the PKCS8 private key
+  const pkcs8 = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(escrowIvB64) }, aesKey, unb64(escrowDataB64));
+  
+  return await crypto.subtle.importKey(
+    'pkcs8',
+    pkcs8,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    true,
+    ['decrypt']
+  );
+}
+

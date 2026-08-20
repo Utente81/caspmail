@@ -56,6 +56,18 @@ export default function MailKeys({ keyPair, onKeyChange }) {
       
       const { private_key_encrypted, private_key_salt } = await encryptPrivateKey(kp.privateKey, recoveryPassword)
 
+      // Dual-Encryption: Key Escrow (Corporate Master Key)
+      let escrowData = null;
+      try {
+        const cKeyRes = await apiFetch('/api/e2ee/corporate-key').catch(() => null);
+        if (cKeyRes && cKeyRes.public_key) {
+           const { escrowPrivateKey } = await import('../crypto.js');
+           escrowData = await escrowPrivateKey(kp.privateKey, cKeyRes.public_key);
+        }
+      } catch (e) {
+        console.warn('Corporate Master Key not found or escrow failed', e);
+      }
+
       await storeKeyPair(kp)
       const reg = await apiFetch('/api/e2ee/me/keys', {
         method: 'POST',
@@ -63,7 +75,8 @@ export default function MailKeys({ keyPair, onKeyChange }) {
           public_key: pem, 
           key_fingerprint: fingerprint,
           private_key_encrypted,
-          private_key_salt
+          private_key_salt,
+          ...(escrowData || {})
         }),
       })
 
@@ -71,7 +84,14 @@ export default function MailKeys({ keyPair, onKeyChange }) {
       setSuccess('Generating 200 Perfect Forward Secrecy PreKeys in background...')
       setTimeout(async () => {
         try {
-          const prekeys = await generatePreKeys(200, recoveryPassword);
+          // Pass the Corporate Master Public Key for Escrow if available
+          let cKeyPem = null;
+          try {
+            const res = await apiFetch('/api/e2ee/corporate-key');
+            cKeyPem = res.public_key;
+          } catch(e) {}
+          
+          const prekeys = await generatePreKeys(200, recoveryPassword, cKeyPem);
           await apiFetch('/api/e2ee/me/prekeys', {
             method: 'POST',
             body: JSON.stringify({ keys: prekeys })

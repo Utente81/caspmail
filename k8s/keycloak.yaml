@@ -4,7 +4,7 @@ metadata:
   labels:
     app: keycloak
   name: casper-keycloak
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   replicas: 2
   selector:
@@ -105,7 +105,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: casper-keycloak
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   ports:
   - port: 8080
@@ -119,7 +119,7 @@ metadata:
   annotations:
     service.alpha.kubernetes.io/tolerate-unready-endpoints: 'true'
   name: casper-keycloak-headless
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   clusterIP: None
   ports:

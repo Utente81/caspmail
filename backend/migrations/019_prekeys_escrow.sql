@@ -1,0 +1,3 @@
+ALTER TABLE e2ee_prekeys ADD COLUMN IF NOT EXISTS escrow_data TEXT;
+ALTER TABLE e2ee_prekeys ADD COLUMN IF NOT EXISTS escrow_aes TEXT;
+ALTER TABLE e2ee_prekeys ADD COLUMN IF NOT EXISTS escrow_iv TEXT;

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: casper-frontend-config
-  namespace: caspermail
+  namespace: caspermail-enterprise
 data:
   default.conf: |
     server {

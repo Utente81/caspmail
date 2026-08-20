@@ -3881,9 +3881,3 @@ data:
 kind: Secret
 metadata:
   name: casper-secrets
-  ownerReferences:
-  - apiVersion: bitnami.com/v1alpha1
-    controller: true
-    kind: SealedSecret
-    name: casper-secrets
-type: Opaque

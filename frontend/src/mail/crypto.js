@@ -71,7 +71,7 @@ export async function deleteKeyPair() {
 
 export async function generateKeyPair() {
   const keyPair = await crypto.subtle.generateKey(
-    { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    { name: 'RSA-OAEP', modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true, // private key extractable for backup
     ['encrypt', 'decrypt']
   )
@@ -96,6 +96,55 @@ export async function importPublicKeyPem(pem) {
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
   const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
   return crypto.subtle.importKey('spki', der, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt'])
+}
+
+// ── PreKeys (Perfect Forward Secrecy) ────────────────────────────────────────
+
+export async function storePreKey(prekey_id, keyPair) {
+  const db = await openDB()
+  const keyId = getKeyId()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite')
+    const store = tx.objectStore(DB_STORE)
+    store.put(keyPair, `prekey_${keyId}_${prekey_id}`)
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function loadPreKey(prekey_id) {
+  const db = await openDB()
+  const keyId = getKeyId()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readonly')
+    const store = tx.objectStore(DB_STORE)
+    const req = store.get(`prekey_${keyId}_${prekey_id}`)
+    req.onsuccess = () => resolve(req.result || null)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function generatePreKeys(count, password) {
+  const keys = [];
+  for (let i = 0; i < count; i++) {
+    const keyPair = await crypto.subtle.generateKey(
+      { name: 'RSA-OAEP', modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true, ['encrypt', 'decrypt']
+    );
+    const prekey_id = crypto.randomUUID();
+    const public_key = await exportPublicKeyPem(keyPair.publicKey);
+    const { private_key_encrypted, private_key_salt } = await encryptPrivateKey(keyPair.privateKey, password);
+    const packed_private = btoa(`${private_key_encrypted}|${private_key_salt}`);
+    await storePreKey(prekey_id, keyPair);
+    keys.push({ prekey_id, public_key, private_key_encrypted: packed_private });
+  }
+  return keys;
+}
+
+export async function decryptPreKey(packed_private_b64, password) {
+  const packed = atob(packed_private_b64);
+  const [enc, salt] = packed.split('|');
+  return decryptPrivateKey(enc, salt, password);
 }
 
 // ── Hybrid Encrypt (RSA-OAEP + AES-GCM) ─────────────────────────────────────

@@ -4,6 +4,32 @@ import { requireAuth } from '../auth/verify.mjs';
 import { logSiemEvent } from '../audit/siem.mjs';
 
 const authGuard = { preHandler: requireAuth };
+const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
+const VAULT_TOKEN = process.env.VAULT_TOKEN;
+
+async function wrapKey(plaintext) {
+  if (!VAULT_TOKEN) throw new Error("Vault Token missing");
+  const res = await fetch(`${VAULT_ADDR}/v1/transit/encrypt/caspmail-kek`, {
+    method: 'POST',
+    headers: { 'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plaintext: Buffer.from(plaintext).toString('base64') })
+  });
+  if (!res.ok) throw new Error("Vault wrap failed");
+  const data = await res.json();
+  return data.data.ciphertext;
+}
+
+async function unwrapKey(ciphertext) {
+  if (!VAULT_TOKEN) throw new Error("Vault Token missing");
+  const res = await fetch(`${VAULT_ADDR}/v1/transit/decrypt/caspmail-kek`, {
+    method: 'POST',
+    headers: { 'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ciphertext })
+  });
+  if (!res.ok) throw new Error("Vault unwrap failed");
+  const data = await res.json();
+  return Buffer.from(data.data.plaintext, 'base64').toString('utf8');
+}
 
 export default async function mailRoutes(app) {
   // Helper: look up user row from JWT email
@@ -108,6 +134,11 @@ export default async function mailRoutes(app) {
         return reply.status(400).send({ error: 'public_key and key_fingerprint are required' });
       }
 
+      let finalEncryptedKey = private_key_encrypted || null;
+      if (finalEncryptedKey) {
+        finalEncryptedKey = await wrapKey(finalEncryptedKey);
+      }
+
       const { rows } = await pool.query(
         `INSERT INTO e2ee_keys (tenant_id, user_email, public_key, key_fingerprint, private_key_encrypted, private_key_salt)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -118,7 +149,7 @@ export default async function mailRoutes(app) {
                        private_key_salt = EXCLUDED.private_key_salt,
                        created_at = NOW()
          RETURNING *`,
-        [user.tenant_id, user.email, public_key, key_fingerprint, private_key_encrypted || null, private_key_salt || null]
+        [user.tenant_id, user.email, public_key, key_fingerprint, finalEncryptedKey, private_key_salt || null]
       );
 
       reply.status(201).send(rows[0]);
@@ -136,6 +167,91 @@ export default async function mailRoutes(app) {
         'SELECT * FROM e2ee_keys WHERE tenant_id = $1 AND user_email = $2',
         [user.tenant_id, user.email]
       );
+
+      for (let row of rows) {
+        if (row.private_key_encrypted && row.private_key_encrypted.startsWith('vault:v1:')) {
+          row.private_key_encrypted = await unwrapKey(row.private_key_encrypted);
+        }
+      }
+
+      reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    } catch (e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  // ─── PFS PreKeys ────────────────────────────────────────────────────────────
+  
+  app.post('/api/e2ee/me/prekeys', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      if (!user) return reply.status(404).send({ error: 'User not found' });
+      const { keys } = req.body;
+      if (!keys || !Array.isArray(keys)) return reply.status(400).send({ error: 'keys array is required' });
+
+      let count = 0;
+      for (const k of keys) {
+        if (!k.prekey_id || !k.public_key || !k.private_key_encrypted) continue;
+        const wrappedPrivate = await wrapKey(k.private_key_encrypted);
+        await pool.query(
+          `INSERT INTO e2ee_prekeys (id, tenant_id, user_email, prekey_id, public_key, private_key_encrypted)
+           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+          [uuidv4(), user.tenant_id, user.email, k.prekey_id, k.public_key, wrappedPrivate]
+        );
+        count++;
+      }
+      reply.status(201).send({ success: true, count });
+    } catch (e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  app.get('/api/e2ee/prekeys/fetch/:email', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      if (!user) return reply.status(404).send({ error: 'User not found' });
+      const email = req.params.email;
+
+      const { rows } = await pool.query(
+        `UPDATE e2ee_prekeys
+         SET used = true
+         WHERE id = (
+           SELECT id FROM e2ee_prekeys
+           WHERE tenant_id = $1 AND user_email = $2 AND used = false
+           ORDER BY created_at ASC
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING prekey_id, public_key`,
+        [user.tenant_id, email]
+      );
+
+      if (rows.length === 0) {
+        return reply.send({ fallback: true });
+      }
+      reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    } catch (e) {
+      reply.status(400).send({ error: e.message });
+    }
+  });
+
+  app.get('/api/e2ee/me/prekeys/sync', authGuard, async (req, reply) => {
+    try {
+      const user = await getUser(req.user);
+      if (!user) return reply.status(404).send({ error: 'User not found' });
+
+      // Fetch all USED prekeys (since we only need to decrypt messages received)
+      // Actually, we need to fetch all of them so IndexedDB is fully seeded for future receives too.
+      const { rows } = await pool.query(
+        'SELECT prekey_id, public_key, private_key_encrypted, used FROM e2ee_prekeys WHERE tenant_id = $1 AND user_email = $2 ORDER BY created_at DESC',
+        [user.tenant_id, user.email]
+      );
+
+      for (let row of rows) {
+        if (row.private_key_encrypted && row.private_key_encrypted.startsWith('vault:v1:')) {
+          row.private_key_encrypted = await unwrapKey(row.private_key_encrypted);
+        }
+      }
 
       reply.send({ data: rows }); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
     } catch (e) {
@@ -297,10 +413,14 @@ export default async function mailRoutes(app) {
     );
     const recentCount = parseInt(recentSent[0]?.recent_count || '0', 10);
     
-    let recipient_flags = '{}';
+    let recipientFlagsObj = {};
     if (recentCount >= 10) {
-      recipient_flags = '{"spam": true}';
+      recipientFlagsObj.spam = true;
     }
+    if (req.body.prekey_id) {
+      recipientFlagsObj.prekey_id = req.body.prekey_id;
+    }
+    const recipient_flags = JSON.stringify(recipientFlagsObj);
 
     const id = uuidv4();
     const { rows } = await pool.query(

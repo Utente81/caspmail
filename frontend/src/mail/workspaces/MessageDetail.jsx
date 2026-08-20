@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { ChevronLeft, Reply, Forward, ShieldAlert, Star, Archive, AlertOctagon, Trash2, XCircle, AlertCircle, Unlock, Lock, Paperclip, Download } from 'lucide-react'
-import { decryptMessage, decryptAttachment } from '../crypto.js'
+import { decryptMessage, decryptAttachment, loadPreKey } from '../crypto.js'
 
 function apiGet(path) {
   const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
@@ -51,7 +51,17 @@ export default function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, 
     setLoading(true)
     apiGet(`/api/e2ee/messages/${msg.id}`)
       .then(async (full) => {
-         const plain = await decryptMessage(keyPair.privateKey, full.subject_encrypted, full.body_encrypted, full.nonce)
+         let activePrivKey = keyPair.privateKey;
+         if (full.recipient_flags?.prekey_id && folder !== 'sent') {
+           const preKeyPair = await loadPreKey(full.recipient_flags.prekey_id);
+           if (preKeyPair && preKeyPair.privateKey) {
+             activePrivKey = preKeyPair.privateKey;
+           } else {
+             throw new Error('PFS PreKey used for this message is missing locally (try Syncing PreKeys in Security Settings).')
+           }
+         }
+
+         const plain = await decryptMessage(activePrivKey, full.subject_encrypted, full.body_encrypted, full.nonce)
          let decryptedAtts = []
          if (full.attachments && full.attachments.length > 0) {
            decryptedAtts = await Promise.all(full.attachments.map(async (att) => {

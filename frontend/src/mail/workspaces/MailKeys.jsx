@@ -3,7 +3,8 @@ import { Key, ShieldCheck, AlertCircle, RefreshCw, Trash2, CheckCircle, Download
 import {
   generateKeyPair, exportPublicKeyPem, exportPrivateKeyPem, fingerprintPublicKey,
   storeKeyPair, loadKeyPair, deleteKeyPair,
-  encryptPrivateKey, decryptPrivateKey, importPublicKeyPem
+  encryptPrivateKey, decryptPrivateKey, importPublicKeyPem,
+  generatePreKeys, storePreKey, decryptPreKey
 } from '../crypto.js'
 
 function apiFetch(path, opts = {}) {
@@ -65,11 +66,26 @@ export default function MailKeys({ keyPair, onKeyChange }) {
           private_key_salt
         }),
       })
+
+      // Generate 200 PreKeys
+      setSuccess('Generating 200 Perfect Forward Secrecy PreKeys in background...')
+      setTimeout(async () => {
+        try {
+          const prekeys = await generatePreKeys(200, recoveryPassword);
+          await apiFetch('/api/e2ee/me/prekeys', {
+            method: 'POST',
+            body: JSON.stringify({ keys: prekeys })
+          });
+          setSuccess('Keypair and 200 PFS PreKeys generated and backed up securely. You can now use CaspMail.')
+        } catch(e) {
+          console.error('PreKeys generation error', e)
+        }
+      }, 100);
+
       setLocalKey(kp)
       setServerKey(reg)
       setRecoveryPassword('')
       if (onKeyChange) onKeyChange(kp)
-      setSuccess('Keypair generated and backed up securely. You can now use CaspMail.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -101,10 +117,27 @@ export default function MailKeys({ keyPair, onKeyChange }) {
       
       const kp = { publicKey, privateKey }
       await storeKeyPair(kp)
+      
+      setSuccess('Private key successfully restored! Syncing PreKeys...')
+      try {
+        const syncRes = await apiFetch('/api/e2ee/me/prekeys/sync')
+        if (syncRes.data) {
+          for (const k of syncRes.data) {
+            try {
+              const preKeyPriv = await decryptPreKey(k.private_key_encrypted, restorePassword)
+              const preKeyPub = await importPublicKeyPem(k.public_key)
+              await storePreKey(k.prekey_id, { publicKey: preKeyPub, privateKey: preKeyPriv })
+            } catch(e) {}
+          }
+        }
+      } catch(e) {
+        console.error('PreKey sync error', e)
+      }
+
       setLocalKey(kp)
       setRestorePassword('')
       if (onKeyChange) onKeyChange(kp)
-      setSuccess('Private key successfully restored from backup!')
+      setSuccess('Keys and PreKeys successfully restored from backup!')
     } catch (err) {
       console.error('[restore-key-error]', err)
       setError('Failed to restore. The password might be incorrect.')

@@ -213,17 +213,36 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
     }
 
     try {
-      // Fetch recipient's public key
+      // Fetch recipient's public key (Identity Key)
       const { data: keys } = await apiFetch(`/api/e2ee/keys/${encodeURIComponent(to)}`)
       if (!keys || keys.length === 0) {
         throw new Error(`Recipient ${to} has not set up their encryption keys yet.`)
       }
 
+      // Try fetching a PreKey for PFS
+      let prekey = null;
+      try {
+        const pkRes = await fetch(`/api/e2ee/prekeys/fetch/${encodeURIComponent(to)}`, {
+           headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')}` }
+        });
+        if (pkRes.ok) {
+           prekey = await pkRes.json();
+        }
+      } catch (e) { console.error('Failed to fetch PreKey', e); }
+
       // Encrypt for sender ONCE (to save a readable copy in Sent)
       const senderPayload = await encryptMessage(keyPair.publicKey, subject, body)
 
       for (let i = 0; i < keys.length; i++) {
-        const recipientPublicKey = await importPublicKeyPem(keys[i].public_key)
+        let recipientPublicKey;
+        let usedPrekeyId = null;
+        if (i === 0 && prekey && prekey.public_key) {
+           recipientPublicKey = await importPublicKeyPem(prekey.public_key);
+           usedPrekeyId = prekey.prekey_id;
+        } else {
+           recipientPublicKey = await importPublicKeyPem(keys[i].public_key);
+        }
+        
         const payload = await encryptMessage(recipientPublicKey, subject, body)
         
         // Encrypt attachments
@@ -251,6 +270,7 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
           body: JSON.stringify({ 
             to_email: keys[i].user_email || to, 
             ...payload,
+            prekey_id: usedPrekeyId,
             // Only save the sender copy on the first message so it doesn't duplicate in "Sent"
             sender_subject_encrypted: i === 0 ? senderPayload.subject_encrypted : null,
             sender_body_encrypted: i === 0 ? senderPayload.body_encrypted : null,

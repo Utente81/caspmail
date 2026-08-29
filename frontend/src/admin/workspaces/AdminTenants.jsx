@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, RefreshCw, AlertTriangle, X, Check } from 'lucide-react'
 
-function api(path, opts) {
+function api(path, opts = {}) {
   const token = sessionStorage.getItem('caspmail_access_token')
+  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  if (opts.body) {
+    headers['Content-Type'] = 'application/json'
+  }
   return fetch(`/api/admin${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers,
     ...opts,
   })
 }

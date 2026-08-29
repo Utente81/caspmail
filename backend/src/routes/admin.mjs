@@ -624,6 +624,10 @@ export default async function adminRoutes(app) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }
 
+    const { rows: tenantRows } = await pool.query('SELECT status FROM tenants WHERE id = $1', [tenant_id]);
+    if (tenantRows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
+    if (tenantRows[0].status !== 'active') return reply.status(400).send({ error: 'Cannot add domain to an inactive or deleted tenant' });
+
     const id            = uuidv4();
     const dns_txt_token = `caspermail-verify=${uuidv4().replace(/-/g, '')}`;
 

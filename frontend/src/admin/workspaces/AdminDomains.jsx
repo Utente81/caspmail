@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, AlertTriangle, X, Check, Globe, Copy } from 'lucide-react'
+import { Plus, RefreshCw, AlertTriangle, X, Check, Globe, Copy, Trash2 } from 'lucide-react'
 
 function api(path, opts) {
   const token = sessionStorage.getItem('caspmail_access_token')
@@ -91,6 +91,17 @@ export default function AdminDomains() {
     }
   }
 
+  async function handleDelete(domainId) {
+    if (!confirm('Are you sure you want to delete this domain?')) return
+    try {
+      const res = await api(`/domains/${domainId}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Deletion failed') }
+      setRows(r => r.filter(d => d.id !== domainId))
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
   const tenantName = id => tenants.find(t => t.id === id)?.name || id
 
   return (
@@ -148,15 +159,20 @@ export default function AdminDomains() {
                   </div>
                 </td>
                 <td>
-                  {!d.verified && (
-                    <button
-                      className="adm-btn adm-btn-ghost adm-btn-sm"
-                      onClick={() => handleVerify(d.id)}
-                      disabled={verifying === d.id}
-                    >
-                      {verifying === d.id ? 'Checking…' : 'Verify DNS'}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {!d.verified && (
+                      <button
+                        className="adm-btn adm-btn-ghost adm-btn-sm"
+                        onClick={() => handleVerify(d.id)}
+                        disabled={verifying === d.id}
+                      >
+                        {verifying === d.id ? 'Checking…' : 'Verify DNS'}
+                      </button>
+                    )}
+                    <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ color: 'var(--red)', padding: '4px' }} onClick={() => handleDelete(d.id)} title="Delete Domain">
+                      <Trash2 size={16} />
                     </button>
-                  )}
+                  </div>
                 </td>
               </tr>
             ))}

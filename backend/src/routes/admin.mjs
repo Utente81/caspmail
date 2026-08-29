@@ -289,6 +289,20 @@ export default async function adminRoutes(app) {
 
   // ─── Users ────────────────────────────────────────────────────────────────
 
+  app.delete('/tenants/:id', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM tenants WHERE id = $1', [id]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
+    await pool.query('UPDATE tenants SET status = $1 WHERE id = $2', ['deleted', id]);
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'delete', 'tenant', $3, $4)`,
+      [id, req.user.sub, JSON.stringify({ tenant_id: id }), req.ip]
+    );
+    await pool.query("UPDATE users SET status = 'suspended' WHERE tenant_id = $1", [id]);
+    reply.send({ success: true });
+  });
+
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
@@ -944,6 +958,19 @@ export default async function adminRoutes(app) {
     const { rowCount } = await pool.query('DELETE FROM organization_aliases WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Not found' });
     reply.send({ ok: true });
+  });
+
+  app.delete('/domains/:id', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Domain not found' });
+    await pool.query('DELETE FROM domains WHERE id = $1', [id]);
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'delete', 'domain', $3, $4)`,
+      [rows[0].tenant_id, req.user.sub, JSON.stringify({ id, domain: rows[0].domain }), req.ip]
+    );
+    reply.send({ success: true });
   });
 
   // 🛡️ Audit Log 🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️────────────────────────────────────────────────────────────

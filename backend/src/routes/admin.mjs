@@ -155,6 +155,22 @@ async function resetKeycloakUserPassword({ email, password }) {
   return keycloakUser.id;
 }
 
+async function deleteKeycloakUser(email) {
+  const token = await keycloakAdminToken();
+  const keycloakUser = await findKeycloakUser(token, email);
+  if (!keycloakUser) return; // already deleted
+
+  const headers = { Authorization: `Bearer ${token}` };
+  const res = await fetch(
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}`,
+    { method: 'DELETE', headers }
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Keycloak delete failed ${res.status}: ${text}`);
+  }
+}
+
 async function getTenantId(req) {
   let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
   if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
@@ -472,6 +488,31 @@ export default async function adminRoutes(app) {
 
   app.delete('/users/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
+    const hardDelete = req.query.hard === 'true';
+
+    if (hardDelete) {
+      const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      if (userRows.length === 0) return reply.status(404).send({ error: 'User not found' });
+      const user = userRows[0];
+
+      try {
+        await deleteKeycloakUser(user.email);
+      } catch (err) {
+        req.log.error({ err, email: user.email }, 'Keycloak user hard delete failed');
+      }
+
+      await pool.query('DELETE FROM users WHERE id=$1', [id]);
+      
+      await pool.query('DELETE FROM e2ee_keys WHERE tenant_id=$1 AND user_email=$2', [user.tenant_id, user.email]);
+
+      await pool.query(
+        `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+         VALUES ($1, $2, 'hard_delete', 'user', $3, $4)`,
+        [user.tenant_id, req.user.sub, JSON.stringify({ id, email: user.email }), req.ip]
+      );
+
+      return reply.send({ ok: true, hard_deleted: true });
+    }
 
     const { rows, rowCount } = await pool.query(
       `UPDATE users

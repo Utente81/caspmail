@@ -662,11 +662,18 @@ export default async function mailRoutes(app) {
 
       // Fetch user's messages
       const { rows: messages } = await pool.query(
-        `SELECT id, from_email as sender, to_email as recipient, subject_encrypted, body_encrypted, metadata_nonce as nonce, prekey_id, created_at 
+        `SELECT id, from_email as sender, to_email as recipient, subject_encrypted, body_encrypted, nonce, created_at 
          FROM e2ee_messages 
          WHERE tenant_id = $1 AND (to_email = $2 OR from_email = $2) 
          ORDER BY created_at DESC LIMIT 100`,
         [user.tenant_id, targetEmail]
+      );
+
+      // IMPORTANT: Log this highly privileged eDiscovery access
+      await pool.query(
+        `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+         VALUES ($1, $2, 'ediscovery_access', 'e2ee_messages', $3, $4)`,
+        [user.tenant_id, req.user.sub, JSON.stringify({ target_email: targetEmail }), req.ip]
       );
 
       reply.send({

@@ -31,6 +31,8 @@ import SOCCompliance from './workspaces/SOCCompliance'
 import SOCAuditLog from './workspaces/SOCAuditLog'
 import SOCSOAR from './workspaces/SOCSOAR'
 import SOCPhishing from './workspaces/SOCPhishing'
+import SOCEDiscovery from './workspaces/SOCEDiscovery'
+import { Key } from 'lucide-react'
 import SOCITAM from './workspaces/SOCITAM'
 import SOCVulnerabilities from './workspaces/SOCVulnerabilities'
 import SOCPhysical from './workspaces/SOCPhysical'
@@ -67,6 +69,7 @@ const NAV = [
       { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
       { id: 'audit-log', label: 'Audit Log', icon: ClipboardList },
       { id: 'phishing', label: 'Phishing Drill', icon: Mail },
+      { id: 'ediscovery', label: 'eDiscovery (Key Escrow)', icon: Key },
       { id: 'itam', label: 'ITAM (Assets)', icon: Server },
       { id: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug },
     ],
@@ -222,6 +225,7 @@ export default function SOCDashboard() {
       case 'compliance': return <SOCCompliance />
       case 'audit-log':  return <SOCAuditLog />
       case 'phishing':   return <SOCPhishing />
+      case 'ediscovery': return <SOCEDiscovery />
       case 'itam':       return <SOCITAM />
       case 'vulnerabilities': return <SOCVulnerabilities />
       case 'physical':   return <SOCPhysical />

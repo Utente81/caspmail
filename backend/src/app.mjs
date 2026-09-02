@@ -13,7 +13,7 @@ import socRoutes, { startSoarWorker } from './routes/soc.mjs';
 import mailRoutes from './routes/mail.mjs';
 import organizationRoutes from './routes/organization.mjs';
 import contactsRoutes from './routes/contacts.mjs';
-
+import { verifyToken } from './auth/verify.mjs';
 // Global cache for SOAR Application Firewall
 export const blockedIps = new Set();
 export function blockIp(ip) {
@@ -91,10 +91,21 @@ ioServer.listen(3001, '0.0.0.0', () => {
 
 app.io = io;
 
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace('Bearer ', '');
+    if (!token) throw new Error('Missing token');
+    const mockReq = { headers: { authorization: `Bearer ${token}` } };
+    socket.user = await verifyToken(mockReq);
+    next();
+  } catch (err) {
+    next(new Error('Unauthorized'));
+  }
+});
+
 io.on('connection', (socket) => {
-  app.log.info({ socketId: socket.id }, 'New WebSocket connection');
+  app.log.info({ socketId: socket.id, user: socket.user?.email }, 'New secure WebSocket connection');
   
-  // Very simple auth check can be added here or via middleware
   socket.on('disconnect', () => {
     app.log.info({ socketId: socket.id }, 'WebSocket disconnected');
   });
@@ -110,7 +121,8 @@ io.on('connection', (socket) => {
 // The keyGenerator always resolves the real client IP even when behind nginx.
 
 function realIp(req) {
-  return req.headers['x-real-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+  // Fastify handles trustProxy and standardizes req.ip securely, preventing spoofing
+  return req.ip;
 }
 
 function logWafEvent(ip, type, severity, message, mitre_technique) {

@@ -127,5 +127,11 @@ Traefik funge da unico punto di ingresso e termina il traffico TLS proveniente d
 ### 5.2 Sicurezza Dati (E2EE)
 CasperMail adotta un approccio **Encryption as a Service (EaaS)**. Il database PostgreSQL *non contiene mai* il contenuto delle email o i token sensibili in chiaro. Il backend demanda la crittografia a HashiCorp Vault tramite il Transit Engine, assicurando che una compromissione del DB non esponga alcun dato.
 
-### 5.3 Intelligenza (AI) & Security Operations Center (SOC)
+### 5.3 Mobile App & MDM Architecture (React Native)
+CasperMail include un client enterprise mobile sviluppato in **React Native** (iOS/Android). 
+- **Smart Discovery**: L'app implementa un motore di discovery dinamico che, a partire dall'indirizzo email dell'utente, risolve automaticamente l'endpoint del tenant isolato e i metadati OIDC di Keycloak.
+- **Hardware Enclave**: Le chiavi private per la decodifica locale dei messaggi (E2EE Client-Side) vengono salvate strettamente all'interno del Secure Enclave / Keystore hardware del dispositivo.
+- **Enterprise Distribution**: Le build vengono compilate tramite EAS (Expo Application Services) e distribuite privatamente tramite l'infrastruttura MDM (Mobile Device Management) dell'organizzazione.
+
+### 5.4 Intelligenza (AI) & Security Operations Center (SOC)
 I log strutturati generati dai container (Nginx, Node, Vault, Keycloak) vengono prelevati da Promtail e inviati a **Loki**, dove **Grafana** offre dashboard SOC real-time. In futuro, il SIEM potrà integrare un motore AI per l'analisi comportamentale e la rilevazione di anomalie (es. login simultanei da paesi diversi, picchi di richieste errate verso Vault).

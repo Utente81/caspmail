@@ -18,11 +18,16 @@ CasperMail is a military-grade, next-generation enterprise communication and sec
 - **SIEM Export (Splunk / QRadar)**: Asynchronous Webhook-based integration to forward High/Critical severity events to enterprise SIEMs (JSON/CEF format).
 - **Anti-SSRF SOAR Engine**: Playbooks feature autonomous incident response with built-in network boundary protections.
 
-### 3. 📧 Secure Webmail & Client-Side DLP
+### 3. 📱 Mobile Device Management (MDM) & App
+- **React Native Enterprise Client**: Hybrid architecture app with Smart Discovery for seamless tenant routing and zero-knowledge end-to-end encryption.
+- **Hardware Secure Enclave**: Private keys reside strictly in the iOS/Android hardware enclave, never bundled with the app code.
+- **Automated EAS Cloud Builds**: Seamless production CI/CD for `.aab` and `.ipa` artifacts through Expo Application Services.
+
+### 4. 📧 Secure Webmail & Client-Side DLP
 - **End-to-End Encryption**: Secure message drafting with robust client-side isolation.
 - **Data Loss Prevention (DLP)**: Prevents exfiltration of PII (Credit Cards, IBANs, SSNs) directly in the browser before data reaches the network layer, generating instant SOC telemetry.
 
-### 4. ⚙️ Cloud-Native & High Availability
+### 5. ⚙️ Cloud-Native & High Availability
 - **CloudNativePG PostgreSQL**: Database high-availability clustering, continuous archiving, and disaster recovery via MinIO.
 - **GitOps Ready**: Fully automated, declarative deployments powered by ArgoCD.
 - **PLG Observability Stack**: Real-time log aggregation and monitoring via Prometheus, Loki, Promtail, and Grafana.

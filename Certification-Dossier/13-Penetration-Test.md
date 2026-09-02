@@ -38,3 +38,13 @@ Le tempistiche di risoluzione (SLA) sono le seguenti:
 - **Low (CVSS 0.1 - 3.9):** Inserite nel backlog tecnico e gestite su base prioritaria.
 
 Ogni remediation viene re-testata per confermare che l'Issue sia stata risolta correttamente (Re-test) prima della firma del Report finale da allegare alle evidenze per l'Auditor.
+
+## 4. Registro Recenti Interventi di Remediation (VAPT Settembre 2026)
+A seguito di un recente assessment di sicurezza, il team ha completato con successo le seguenti remediation critiche e ad alta priorità:
+- **eDiscovery BOLA (Critical):** Implementato middleware RBAC rigido (`socGuard`) sull'endpoint di eDiscovery, bloccando l'accesso non autorizzato ai metadati crittografici altrui.
+- **K8s Secrets Exposure (Critical):** Rimossi permanentemente dal repository manifesti non cifrati (es. `env-vars.yaml`) in favore di SealedSecrets e Vault Injection.
+- **Hardcoded Vault Token (Critical):** Rimosso token di fallback dal codice (`vault.mjs`); le credenziali sono ora rigorosamente lette dall'ambiente d'esecuzione.
+- **WebSocket Auth Bypass (High):** Aggiunto middleware di validazione JWT direttamente nell'handshake di Socket.IO.
+- **Proxy/IP Spoofing (High):** Risolta la vulnerabilità legata a `x-forwarded-for` configurando Fastify per la gestione sicura del proxy network in Kubernetes.
+- **CSP & Info Disclosure (Medium):** Rimozione del flag `unsafe-eval` dalle policy CSP e implementazione di controlli di autenticazione stringenti sull'endpoint `/health/deep`.
+- **SAST CI Pipeline:** La pipeline SAST (Semgrep/Trivy) è stata riallineata e integrata nel processo di deploy, con esclusione sicura dei falsi positivi (DLP Regex).

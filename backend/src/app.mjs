@@ -46,7 +46,7 @@ const app = Fastify({
       ? { target: 'pino-pretty' }
       : undefined,
   },
-  trustProxy: true,
+  trustProxy: process.env.TRUSTED_PROXIES ? process.env.TRUSTED_PROXIES.split(',') : false,
 });
 
 // ─── Security Headers ────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ await app.register(helmet, {
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'", "wss:", "https:"],

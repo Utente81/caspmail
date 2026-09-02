@@ -1,4 +1,5 @@
 import pool from '../db/pool.mjs';
+import { requireRole } from '../auth/verify.mjs';
 
 const VERSION = process.env.npm_package_version || '1.0.0';
 const ISSUER  = process.env.KEYCLOAK_ISSUER
@@ -16,7 +17,8 @@ export default async function healthRoutes(app) {
   });
 
   // Deep readiness probe — checks DB + Keycloak reachability
-  app.get('/health/deep', { logLevel: 'warn' }, async (_req, reply) => {
+  const adminGuard = { preHandler: requireRole(['admin', 'casper_admin']) };
+  app.get('/health/deep', { logLevel: 'warn', ...adminGuard }, async (_req, reply) => {
     const checks = {};
     let allOk = true;
 

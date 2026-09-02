@@ -2,7 +2,8 @@
 // and rotated dynamically using Vault Agent or a similar mechanism.
 // For this implementation, we read from env or use the dev token.
 const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
-const VAULT_TOKEN = process.env.VAULT_TOKEN || 'hvs.CAESIPEuhqHnOBYMweglPQgqkfF2rN9nXAWwy055ThXYCnSdGh4KHGh2cy55NjlkekVjb3FSenM0UjVjNWRicTJ2SEs';
+const VAULT_TOKEN = process.env.VAULT_TOKEN;
+if (!VAULT_TOKEN) console.warn('[Vault] WARNING: VAULT_TOKEN environment variable is not set!');
 const TRANSIT_KEY_NAME = 'caspmail-soc-key';
 
 /**

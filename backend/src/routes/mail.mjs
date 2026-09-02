@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool.mjs';
-import { requireAuth } from '../auth/verify.mjs';
+import { requireAuth, requireRole } from '../auth/verify.mjs';
 import { logSiemEvent } from '../audit/siem.mjs';
 
 const authGuard = { preHandler: requireAuth };
+const socGuard = { preHandler: requireRole(['soc_analyst', 'soc_manager', 'admin', 'casper_admin']) };
 const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
 const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
@@ -669,10 +670,9 @@ export default async function mailRoutes(app) {
 
   // ─── eDiscovery (Enterprise) ────────────────────────────────────────────────
   
-  app.get('/api/e2ee/ediscovery/user/:email', authGuard, async (req, reply) => {
+  app.get('/api/e2ee/ediscovery/user/:email', socGuard, async (req, reply) => {
     try {
       const user = await getUser(req.user);
-      // In a real scenario, check if `user` has SOC/Admin role
       const targetEmail = req.params.email;
       
       // Fetch user's identity key and escrow data

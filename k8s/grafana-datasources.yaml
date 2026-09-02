@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-datasources
-  namespace: caspermail
+  namespace: caspermail-enterprise
 data:
   datasources.yml: |
     apiVersion: 1

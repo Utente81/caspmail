@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - enterprise
 
 env:
   REGISTRY: ghcr.io

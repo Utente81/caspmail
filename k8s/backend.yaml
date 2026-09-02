@@ -4,7 +4,7 @@ metadata:
   labels:
     app: backend
   name: casper-backend
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   replicas: 2
   selector:
@@ -67,7 +67,7 @@ spec:
           value: admin
         - name: SMTP_PASS
           value: admin_secure_password_123
-        image: ghcr.io/utente81/caspmail-backend:1954136c2501a2f1b5454573d047948d6a348ea2
+        image: ghcr.io/utente81/caspmail-backend:b5717cca0e024a948228e9d8aef1fb86b8479fc2
         imagePullPolicy: IfNotPresent
         name: backend
         ports:
@@ -122,7 +122,7 @@ spec:
           /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1
           @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1
           && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/
-        image: ghcr.io/utente81/caspmail-backend:1954136c2501a2f1b5454573d047948d6a348ea2
+        image: ghcr.io/utente81/caspmail-backend:b5717cca0e024a948228e9d8aef1fb86b8479fc2
         imagePullPolicy: IfNotPresent
         name: init-telemetry
         volumeMounts:
@@ -165,7 +165,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: casper-backend
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   ports:
   - port: 3000
@@ -177,7 +177,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: casper-backend-hpa
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   maxReplicas: 10
   metrics:

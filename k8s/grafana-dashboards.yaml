@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboard-providers
-  namespace: caspermail
+  namespace: caspermail-enterprise
 data:
   dashboards.yaml: |
     apiVersion: 1
@@ -20,7 +20,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboards
-  namespace: caspermail
+  namespace: caspermail-enterprise
 data:
   auditing.json: |
     {

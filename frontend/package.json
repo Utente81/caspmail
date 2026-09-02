@@ -25,6 +25,7 @@
     "react-grid-layout": "^1.4.4",
     "react-simple-maps": "^3.0.0",
     "recharts": "^3.9.1",
+    "secrets.js-grempe": "^2.0.0",
     "socket.io-client": "^4.8.3",
     "three": "^0.185.0",
     "three-globe": "^2.45.2",

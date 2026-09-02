@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, AlertTriangle, X, Check, Search } from 'lucide-react'
+import { Plus, RefreshCw, AlertTriangle, X, Check, Search, Trash2 } from 'lucide-react'
 
-function api(path, opts) {
+function api(path, opts = {}) {
   const token = sessionStorage.getItem('caspmail_access_token')
+  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  if (opts.body) {
+    headers['Content-Type'] = 'application/json'
+  }
   return fetch(`/api/admin${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers,
     ...opts,
   })
 }
@@ -115,6 +119,19 @@ export default function AdminUsers() {
     finally { setRevoking(false) }
   }
 
+  async function handleDeleteUser(userObj) {
+    if (!window.confirm(`WARNING: Hard delete ${userObj.email}? This will permanently remove them from the database and Keycloak, leaving only their E2EE messages if any exist. This action CANNOT be undone!`)) return;
+    setEditSaving(true); setEditError(null);
+    try {
+      const res = await api(`/users/${userObj.id}?hard=true`, { method: 'DELETE' });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.statusText); }
+      setRows(r => r.filter(u => u.id !== userObj.id));
+      if (editUser && editUser.id === userObj.id) setEditUser(null);
+      alert('User successfully hard deleted.');
+    } catch (e) { alert('Delete failed: ' + e.message); setEditError(e.message) }
+    finally { setEditSaving(false) }
+  }
+
   async function handleToggleLegalHold(userId, currentVal) {
     if (!window.confirm(`Are you sure you want to ${currentVal ? 'REMOVE' : 'ENABLE'} Legal Hold for this user?`)) return;
     try {
@@ -168,15 +185,15 @@ export default function AdminUsers() {
       <div className="adm-table-wrap">
         <table className="adm-table">
           <thead>
-            <tr><th>Email</th><th>Name</th><th>Tenant</th><th>Role</th><th>Quota</th><th>Status</th><th>Legal Hold</th><th>Created</th></tr>
+            <tr><th>Email</th><th>Name</th><th>Tenant</th><th>Role</th><th>Quota</th><th>Status</th><th>Legal Hold</th><th>Created</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {loading ? (
               Array.from({ length: 6 }, (_, i) => (
-                <tr key={i}>{Array.from({ length: 7 }, (_, j) => <td key={j}><div className="adm-skeleton adm-skeleton-row" /></td>)}</tr>
+                <tr key={i}>{Array.from({ length: 9 }, (_, j) => <td key={j}><div className="adm-skeleton adm-skeleton-row" /></td>)}</tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="adm-empty">{filter ? 'No users match the filter.' : 'No users yet.'}</td></tr>
+              <tr><td colSpan={9} className="adm-empty">{filter ? 'No users match the filter.' : 'No users yet.'}</td></tr>
             ) : filtered.map(u => (
               <tr key={u.id} className="adm-tr-clickable" onClick={() => openEdit(u)}>
                 <td className="adm-td-name">{u.email}</td>
@@ -192,6 +209,11 @@ export default function AdminUsers() {
                   </label>
                 </td>
                 <td className="adm-td-date">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td onClick={e => e.stopPropagation()}>
+                  <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ color: 'var(--red)', padding: '4px' }} onClick={() => handleDeleteUser(u)} title="Delete User">
+                    <Trash2 size={16} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -238,6 +260,9 @@ export default function AdminUsers() {
             <div className="adm-modal-footer">
               <button type="button" className="adm-btn adm-btn-ghost" style={{ color: 'var(--red)', marginRight: 'auto' }} onClick={handleRevokeSessions} disabled={revoking}>
                 {revoking ? 'Revoking...' : 'Revoke Sessions'}
+              </button>
+              <button type="button" className="adm-btn adm-btn-ghost" style={{ color: 'var(--red)' }} onClick={() => handleDeleteUser(editUser)} disabled={editSaving}>
+                Delete User
               </button>
               <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setEditUser(null)}>Cancel</button>
               <button type="submit" className="adm-btn adm-btn-primary" disabled={editSaving}>

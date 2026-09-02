@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS corporate_master_keys (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  public_key TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

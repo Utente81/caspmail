@@ -7,10 +7,10 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     traefik.ingress.kubernetes.io/router.middlewares: caspermail-caspermail-security-headers@kubernetescrd
   name: caspermail-ingress
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   rules:
-  - host: caspmail.com
+  - host: enterprise.caspmail.com
     http:
       paths:
       - backend:
@@ -27,7 +27,7 @@ spec:
               number: 80
         path: /
         pathType: Prefix
-  - host: mail.caspmail.com
+  - host: mail.enterprise.caspmail.com
     http:
       paths:
       - backend:
@@ -44,7 +44,7 @@ spec:
               number: 80
         path: /
         pathType: Prefix
-  - host: soc.caspmail.com
+  - host: soc.enterprise.caspmail.com
     http:
       paths:
       - backend:
@@ -61,7 +61,7 @@ spec:
               number: 80
         path: /
         pathType: Prefix
-  - host: auth.caspmail.com
+  - host: auth.enterprise.caspmail.com
     http:
       paths:
       - backend:
@@ -71,7 +71,7 @@ spec:
               number: 8080
         path: /
         pathType: Prefix
-  - host: db.caspmail.com
+  - host: db.enterprise.caspmail.com
     http:
       paths:
       - backend:
@@ -83,9 +83,9 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - caspmail.com
-    - mail.caspmail.com
-    - soc.caspmail.com
-    - auth.caspmail.com
-    - db.caspmail.com
+    - enterprise.caspmail.com
+    - mail.enterprise.caspmail.com
+    - soc.enterprise.caspmail.com
+    - auth.enterprise.caspmail.com
+    - db.enterprise.caspmail.com
     secretName: caspermail-tls-secret

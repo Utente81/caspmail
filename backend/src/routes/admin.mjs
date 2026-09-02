@@ -155,6 +155,22 @@ async function resetKeycloakUserPassword({ email, password }) {
   return keycloakUser.id;
 }
 
+async function deleteKeycloakUser(email) {
+  const token = await keycloakAdminToken();
+  const keycloakUser = await findKeycloakUser(token, email);
+  if (!keycloakUser) return; // already deleted
+
+  const headers = { Authorization: `Bearer ${token}` };
+  const res = await fetch(
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}/users/${keycloakUser.id}`,
+    { method: 'DELETE', headers }
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Keycloak delete failed ${res.status}: ${text}`);
+  }
+}
+
 async function getTenantId(req) {
   let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
   if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
@@ -272,6 +288,42 @@ export default async function adminRoutes(app) {
   });
 
   // ─── Users ────────────────────────────────────────────────────────────────
+
+  app.delete('/tenants/:id', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM tenants WHERE id = $1', [id]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
+    await pool.query('UPDATE tenants SET status = $1 WHERE id = $2', ['deleted', id]);
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'delete', 'tenant', $3, $4)`,
+      [id, req.user.sub, JSON.stringify({ tenant_id: id }), req.ip]
+    );
+    await pool.query("UPDATE users SET status = 'suspended' WHERE tenant_id = $1", [id]);
+    reply.send({ success: true });
+  });
+
+  app.get('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM tenant_mobile_policies WHERE tenant_id = $1', [id]);
+    if (rows.length === 0) return reply.send({ require_biometrics: false, prevent_screenshots: false });
+    reply.send(rows[0]);
+  });
+
+  app.put('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { require_biometrics, prevent_screenshots } = req.body;
+    const { rows } = await pool.query(`
+      INSERT INTO tenant_mobile_policies (tenant_id, require_biometrics, prevent_screenshots, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (tenant_id) DO UPDATE 
+      SET require_biometrics = EXCLUDED.require_biometrics, 
+          prevent_screenshots = EXCLUDED.prevent_screenshots, 
+          updated_at = NOW()
+      RETURNING *
+    `, [id, require_biometrics, prevent_screenshots]);
+    reply.send(rows[0]);
+  });
 
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
@@ -472,6 +524,31 @@ export default async function adminRoutes(app) {
 
   app.delete('/users/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
+    const hardDelete = req.query.hard === 'true';
+
+    if (hardDelete) {
+      const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      if (userRows.length === 0) return reply.status(404).send({ error: 'User not found' });
+      const user = userRows[0];
+
+      try {
+        await deleteKeycloakUser(user.email);
+      } catch (err) {
+        req.log.error({ err, email: user.email }, 'Keycloak user hard delete failed');
+      }
+
+      await pool.query('DELETE FROM users WHERE id=$1', [id]);
+      
+      await pool.query('DELETE FROM e2ee_keys WHERE tenant_id=$1 AND user_email=$2', [user.tenant_id, user.email]);
+
+      await pool.query(
+        `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+         VALUES ($1, $2, 'hard_delete', 'user', $3, $4)`,
+        [user.tenant_id, req.user.sub, JSON.stringify({ id, email: user.email }), req.ip]
+      );
+
+      return reply.send({ ok: true, hard_deleted: true });
+    }
 
     const { rows, rowCount } = await pool.query(
       `UPDATE users
@@ -568,6 +645,10 @@ export default async function adminRoutes(app) {
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }
+
+    const { rows: tenantRows } = await pool.query('SELECT status FROM tenants WHERE id = $1', [tenant_id]);
+    if (tenantRows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
+    if (tenantRows[0].status !== 'active') return reply.status(400).send({ error: 'Cannot add domain to an inactive or deleted tenant' });
 
     const id            = uuidv4();
     const dns_txt_token = `caspermail-verify=${uuidv4().replace(/-/g, '')}`;
@@ -903,6 +984,19 @@ export default async function adminRoutes(app) {
     const { rowCount } = await pool.query('DELETE FROM organization_aliases WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Not found' });
     reply.send({ ok: true });
+  });
+
+  app.delete('/domains/:id', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
+    if (rows.length === 0) return reply.status(404).send({ error: 'Domain not found' });
+    await pool.query('DELETE FROM domains WHERE id = $1', [id]);
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
+       VALUES ($1, $2, 'delete', 'domain', $3, $4)`,
+      [rows[0].tenant_id, req.user.sub, JSON.stringify({ id, domain: rows[0].domain }), req.ip]
+    );
+    reply.send({ success: true });
   });
 
   // 🛡️ Audit Log 🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️🛡️────────────────────────────────────────────────────────────

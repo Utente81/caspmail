@@ -2,9 +2,9 @@ name: Docker Security & Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "enterprise" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "enterprise" ]
 
 jobs:
   docker-build-and-scan:

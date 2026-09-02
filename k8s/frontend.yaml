@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: casper-frontend
-  namespace: caspermail
+  namespace: caspermail-enterprise
 spec:
   replicas: 2
   selector:
@@ -16,7 +16,7 @@ spec:
       imagePullSecrets:
       - name: ghcr-login-secret
       containers:
-      - image: ghcr.io/utente81/caspmail-frontend:1954136c2501a2f1b5454573d047948d6a348ea2
+      - image: ghcr.io/utente81/caspmail-frontend:b5717cca0e024a948228e9d8aef1fb86b8479fc2
         securityContext:
           readOnlyRootFilesystem: true
         imagePullPolicy: IfNotPresent

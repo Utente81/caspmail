@@ -40,6 +40,7 @@ export default function AdminTenants() {
   const [formError, setFormError] = useState(null)
 
   const [editForm, setEditForm] = useState(null)
+  const [policiesForm, setPoliciesForm] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -65,6 +66,21 @@ export default function AdminTenants() {
       setRows(r => [tenant, ...r])
       setShowNew(false)
       setForm({ id: '', name: '', plan: 'starter', region: 'eu-west-1' })
+    } catch (e) { setFormError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  
+  async function handleSavePolicies(e) {
+    e.preventDefault()
+    setSaving(true); setFormError(null)
+    try {
+      const res = await api(`/tenants/${policiesForm.id}/mobile-policies`, { method: 'PUT', body: JSON.stringify({
+        require_biometrics: policiesForm.require_biometrics,
+        prevent_screenshots: policiesForm.prevent_screenshots
+      }) })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.statusText) }
+      setPoliciesForm(null)
     } catch (e) { setFormError(e.message) }
     finally { setSaving(false) }
   }
@@ -140,6 +156,23 @@ export default function AdminTenants() {
                   }}>
                     Edit
                   </button>
+                  <button className="adm-btn adm-btn-ghost adm-btn-sm" onClick={async () => {
+                    setLoading(true)
+                    try {
+                      const res = await api(`/tenants/${t.id}/mobile-policies`)
+                      if (res.ok) {
+                        const data = await res.json()
+                        setPoliciesForm({ id: t.id, name: t.name, require_biometrics: data.require_biometrics, prevent_screenshots: data.prevent_screenshots })
+                      }
+                    } catch (e) {
+                      setFormError(e.message)
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}>
+                    MDM Policies
+                  </button>
+
                   <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ color: '#ef4444' }} onClick={async () => {
                     if (!confirm(`Are you sure you want to delete tenant ${t.name}?`)) return;
                     setLoading(true);
@@ -192,6 +225,34 @@ export default function AdminTenants() {
               <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setShowNew(false)}>Cancel</button>
               <button type="submit" className="adm-btn adm-btn-primary" disabled={saving}>
                 {saving ? 'Creating…' : <><Check size={14} /> Create Tenant</>}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      
+      {policiesForm && (
+        <Modal title={`Mobile Policies: ${policiesForm.name}`} onClose={() => setPoliciesForm(null)}>
+          <form className="adm-form" onSubmit={handleSavePolicies}>
+            {formError && <div className="adm-alert adm-alert-error"><AlertTriangle size={14} />{formError}</div>}
+            
+            <div className="adm-field" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <input type="checkbox" id="require_bio" checked={policiesForm.require_biometrics} 
+                onChange={e => setPoliciesForm(f => ({ ...f, require_biometrics: e.target.checked }))} />
+              <label htmlFor="require_bio" style={{ marginBottom: 0 }}>Obbliga FaceID / Biometria (App Mobile)</label>
+            </div>
+            
+            <div className="adm-field" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <input type="checkbox" id="prevent_screen" checked={policiesForm.prevent_screenshots} 
+                onChange={e => setPoliciesForm(f => ({ ...f, prevent_screenshots: e.target.checked }))} />
+              <label htmlFor="prevent_screen" style={{ marginBottom: 0 }}>Blocca Screenshot Anti-Leak (OS level)</label>
+            </div>
+
+            <div className="adm-modal-footer">
+              <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setPoliciesForm(null)}>Cancel</button>
+              <button type="submit" className="adm-btn adm-btn-primary" disabled={saving}>
+                {saving ? 'Saving…' : <><Check size={14} /> Save Policies</>}
               </button>
             </div>
           </form>

@@ -303,6 +303,28 @@ export default async function adminRoutes(app) {
     reply.send({ success: true });
   });
 
+  app.get('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT * FROM tenant_mobile_policies WHERE tenant_id = $1', [id]);
+    if (rows.length === 0) return reply.send({ require_biometrics: false, prevent_screenshots: false });
+    reply.send(rows[0]);
+  });
+
+  app.put('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
+    const { id } = req.params;
+    const { require_biometrics, prevent_screenshots } = req.body;
+    const { rows } = await pool.query(`
+      INSERT INTO tenant_mobile_policies (tenant_id, require_biometrics, prevent_screenshots, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (tenant_id) DO UPDATE 
+      SET require_biometrics = EXCLUDED.require_biometrics, 
+          prevent_screenshots = EXCLUDED.prevent_screenshots, 
+          updated_at = NOW()
+      RETURNING *
+    `, [id, require_biometrics, prevent_screenshots]);
+    reply.send(rows[0]);
+  });
+
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);

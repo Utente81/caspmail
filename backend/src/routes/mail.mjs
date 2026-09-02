@@ -62,6 +62,35 @@ export default async function mailRoutes(app) {
 
   // ─── Current User ─────────────────────────────────────────────────────────
 
+  app.get('/api/discovery/:domain', async (req, reply) => {
+    const { domain } = req.params;
+    
+    // Check if domain exists in domains table and get tenant
+    const { rows: domainRows } = await pool.query('SELECT tenant_id FROM domains WHERE domain = $1', [domain]);
+    
+    if (domainRows.length > 0) {
+      const tenantId = domainRows[0].tenant_id;
+      // Get mobile policies
+      const { rows: policyRows } = await pool.query('SELECT * FROM tenant_mobile_policies WHERE tenant_id = $1', [tenantId]);
+      
+      const policies = policyRows.length > 0 ? policyRows[0] : { require_biometrics: false, prevent_screenshots: false };
+      
+      return reply.send({
+        type: 'enterprise',
+        tenantId,
+        requireBiometrics: policies.require_biometrics,
+        preventScreenshots: policies.prevent_screenshots,
+        oidcIssuer: `https://auth.enterprise.caspmail.com/realms/${tenantId}`
+      });
+    }
+
+    // Default response for caspmail.com or unknown
+    reply.send({
+      type: 'standard',
+      apiUrl: 'https://api.caspmail.com'
+    });
+  });
+
   app.get('/api/me', authGuard, async (req, reply) => {
     const user = await getUser(req.user);
     if (!user) return reply.status(404).send({ error: 'User not found' });

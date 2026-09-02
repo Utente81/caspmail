@@ -26,3 +26,18 @@ Gli Alias (es. `info@azienda.com` verso `mario.rossi@azienda.com`) possono esser
 Gli amministratori hanno accesso in sola lettura agli audit log del proprio tenant per investigare attività sospette:
 - La vista Audit espone eventi come: `LOGIN_SUCCESS`, `LOGIN_FAILED`, `PASSWORD_RESET`, `MAIL_EXPORTED`.
 - In caso di violazioni sistematiche (es. ripetuti `LOGIN_FAILED` da geolocalizzazioni anomale), l'amministratore deve inoltrare la segnalazione al SOC o bloccare l'IP/Utente.
+
+## 5. Mobile Device Management (MDM) e App Mobile
+CasperMail supporta nativamente flotte di dispositivi aziendali (BYOD o Company-Owned).
+
+### Endpoint MDM e Policy
+L'accesso alla dashboard MDM permette di:
+- Definire policy di sicurezza sui dispositivi registrati (es. blocco screenshot, forzatura dell'autenticazione biometrica prima dell'apertura dell'app).
+- Inviare comandi remoti come il "Remote Wipe" dei dati della cache in caso di smarrimento del dispositivo aziendale.
+
+### Build dell'App Mobile (Enterprise Distribution)
+L'applicazione non è pubblicata sugli store pubblici (App Store / Google Play) per impostazione predefinita. L'organizzazione deve compilarla e distribuirla internamente:
+1. Clonare il repository `caspmail-mobile`.
+2. Eseguire il login al servizio di compilazione cloud (es. `eas login`).
+3. Generare la build: `eas build --profile production --platform all`.
+4. Una volta generati i file `.aab` (Android) e `.ipa` (iOS), è possibile farne il deployment attraverso l'infrastruttura MDM (es. Microsoft Intune, VMware Workspace ONE) sui dispositivi dei dipendenti.

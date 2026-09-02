@@ -14,7 +14,8 @@ CasperMail risolve questi problemi isolando ogni componente tramite microservizi
 
 ## 3. Architettura
 CasperMail adotta un'architettura a **microservizi cloud-native** ospitata su Kubernetes (K3s). È composta da:
-- Un **Frontend** reattivo.
+- Un **Frontend** reattivo web-based.
+- Un'applicazione **Mobile Enterprise** (iOS/Android) basata su React Native con Smart Discovery.
 - Un **Backend** API-first.
 - Un database relazionale ad alta affidabilità (**PostgreSQL/CNPG**).
 - Un motore crittografico e di gestione segreti centralizzato (**HashiCorp Vault**).
@@ -34,8 +35,9 @@ Il mercato di riferimento è quello della **cybersecurity enterprise e della com
 
 ## 6. Tecnologie
 - **Infrastruttura:** Kubernetes (K3s), Helm.
-- **Backend:** Node.js.
-- **Frontend:** HTML, JS, CSS Vanilla (Design Moderno).
+- **Backend:** Node.js (Fastify).
+- **Frontend Web:** HTML, JS, CSS Vanilla (Design Moderno).
+- **Frontend Mobile:** React Native, Expo, React Native Paper (MDM Enterprise Client).
 - **Security & IAM:** HashiCorp Vault (Transit Engine per E2EE), Keycloak (OIDC, WebAuthn).
 - **Database:** PostgreSQL (CloudNativePG per HA).
 - **Networking:** Traefik Proxy, Network Policies Kubernetes.

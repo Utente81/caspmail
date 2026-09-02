@@ -32,3 +32,14 @@ La pipeline di Continuous Integration e Continuous Deployment automatizza la val
 ## 4. Patch Management & Hotfix
 - Le patch di sicurezza critiche seguono un percorso accelerato di SDLC. Viene creato un branch `hotfix/` da `main`, testato con CI/CD, e promosso istantaneamente in produzione, bypassando i normali cicli lunghi ma rispettando i controlli automatizzati.
 - Le immagini base dei container (Node.js Alpine) vengono aggiornate e ri-buildate periodicamente.
+
+## 5. Mobile App SDLC (React Native)
+Il ciclo di vita dell'applicazione mobile segue rigide policy di Continuous Deployment private:
+- Il codice è ospitato su repository separato (`caspmail-mobile`).
+- Le dipendenze native vengono controllate tramite `expo doctor` per garantire la compatibilità con le release dell'SDK.
+- La compilazione finale in file binari (.aab, .ipa) avviene unicamente su infrastrutture CI di terze parti sicure (Expo Application Services), senza stoccaggio di certificati e chiavi di firma sui dispositivi degli sviluppatori.
+
+## 6. Tuning della Sicurezza e False Positives
+La pipeline SAST/DAST è costantemente soggetta a tuning per bilanciare sicurezza e produttività:
+- **Baseline Semgrep:** Vengono escluse dalle regole di blocco severo infrastrutture YAML (come i file `k8s/` in GitOps) o regex specifiche di Data Loss Prevention che potrebbero scatenare falsi positivi (es. pattern detector che simulano chiavi AWS).
+- **Trivy Format & IAM Permissions:** Per repository senza licenza GitHub Advanced Security, gli export SARIF vengono inibiti e le vulnerabilità tabulate nei log crudi della CI.

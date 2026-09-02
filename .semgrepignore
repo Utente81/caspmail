@@ -1,2 +1,4 @@
 nginx/ssl/privkey.pem
 scripts/deploy.sh
+k8s/
+.github/

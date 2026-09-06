@@ -16,7 +16,7 @@ data:
     type = internal
 
     [session.smtp.default]
-    auth-require = false
+    auth-require = true
     
     [directory.default]
     type = internal
@@ -54,18 +54,20 @@ spec:
           name: jmap
         env:
         - name: STALWART_ADMIN_PASSWORD
-          value: admin_secure_password_123
+          valueFrom:
+            secretKeyRef:
+              name: casper-stalwart-admin
+              key: password
         volumeMounts:
-        - name: stalwart-data-ram
+        - name: stalwart-data
           mountPath: /opt/stalwart/data
         - name: stalwart-config-volume
           mountPath: /opt/stalwart/etc/stalwart.toml
           subPath: stalwart.toml
       volumes:
-      - name: stalwart-data-ram
-        emptyDir:
-          medium: Memory
-          sizeLimit: 1Gi
+      - name: stalwart-data
+        persistentVolumeClaim:
+          claimName: stalwart-data
       - name: stalwart-config-volume
         configMap:
           name: stalwart-config
@@ -98,3 +100,15 @@ spec:
   - name: jmap
     port: 8080
     targetPort: 8080
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stalwart-data
+  namespace: caspmail-enterprise
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi

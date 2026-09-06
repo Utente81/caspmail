@@ -1,3 +1,4 @@
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Activity, ShieldAlert, Target, Crosshair } from 'lucide-react'
 import { ErrorBoundary } from './ErrorBoundary.jsx'
@@ -200,10 +201,15 @@ export default function SOCThreatMap() {
     const tenant = sessionStorage.getItem('caspmail_tenant') || 'acme-corp'
     if (!token) return
 
-    let url = '/api/soc/stream?token=' + encodeURIComponent(token) + '&tenant_id=' + encodeURIComponent(tenant)
-    const es = new EventSource(url)
-
-    es.addEventListener('event', (e) => {
+    const ctrl = new AbortController()
+    fetchEventSource('/api/soc/stream', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'x-tenant-id': tenant
+      },
+      signal: ctrl.signal,
+      onmessage(e) {
+        if (e.event !== 'event') return;
       try {
         const attack = JSON.parse(e.data)
         const coords = ipToLngLat(attack.source_ip)
@@ -243,10 +249,11 @@ export default function SOCThreatMap() {
       } catch (err) {
         console.error("Error parsing event", err)
       }
+    }
     })
 
     return () => {
-      es.close()
+      ctrl.abort()
     }
   }, [])
 

@@ -36,7 +36,9 @@ spec:
         - name: DB_NAME
           value: caspermail
         - name: DATABASE_SSL
-          value: 'false'
+          value: 'true'
+        - name: DATABASE_CA_FILE
+          value: /etc/caspermail/db-ca/ca.crt
         - name: KEYCLOAK_ISSUER
           value: https://auth.caspmail.com/realms/caspermail
         - name: KEYCLOAK_JWKS_URI
@@ -66,7 +68,10 @@ spec:
         - name: SMTP_USER
           value: admin
         - name: SMTP_PASS
-          value: admin_secure_password_123
+          valueFrom:
+            secretKeyRef:
+              name: casper-smtp
+              key: password
         image: ghcr.io/utente81/caspmail-backend:dc4f56ae672d306a09ad6a72c468d05afbac8c9f
         imagePullPolicy: IfNotPresent
         name: backend
@@ -86,32 +91,17 @@ spec:
           readOnly: true
         - mountPath: /tmp
           name: tmp
+        - mountPath: /etc/caspermail/db-ca
+          name: db-ca
+          readOnly: true
         - mountPath: /app/node_modules
           name: telemetry-node-modules
-        - mountPath: /app/src/routes/soc.mjs
-          name: patch-soc
-          subPath: soc.mjs
-        - mountPath: /app/src/services/vault.mjs
-          name: patch-vault
-          subPath: vault.mjs
         - mountPath: /app/src/app.mjs
           name: patch-app
           subPath: app.mjs
-        - mountPath: /app/src/db/pool.mjs
-          name: patch-pool
-          subPath: pool.mjs
         - mountPath: /app/src/instrumentation.mjs
           name: patch-instrumentation
           subPath: instrumentation.mjs
-        - mountPath: /app/src/routes/admin.mjs
-          name: patch-admin-routes
-          subPath: admin.mjs
-        - mountPath: /app/src/routes/mail.mjs
-          name: patch-mail-routes
-          subPath: mail.mjs
-        - mountPath: /app/src/services/soar.mjs
-          name: patch-soar
-          subPath: soar.mjs
       imagePullSecrets:
       - name: ghcr-login-secret
       initContainers:
@@ -136,30 +126,12 @@ spec:
       - name: secrets
         secret:
           secretName: casper-secrets
-      - configMap:
-          name: backend-patch-soc
-        name: patch-soc
-      - configMap:
-          name: backend-vault
-        name: patch-vault
-      - configMap:
-          name: backend-app
-        name: patch-app
-      - configMap:
-          name: backend-pool
-        name: patch-pool
-      - configMap:
-          name: backend-instrumentation
-        name: patch-instrumentation
-      - configMap:
-          name: backend-admin-routes
-        name: patch-admin-routes
-      - configMap:
-          name: backend-mail-routes
-        name: patch-mail-routes
-      - configMap:
-          name: backend-soar
-        name: patch-soar
+      - name: db-ca
+        secret:
+          secretName: casper-cnpg-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
 ---
 apiVersion: v1
 kind: Service

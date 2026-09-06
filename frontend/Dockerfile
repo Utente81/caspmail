@@ -1,4 +1,4 @@
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 RUN apk upgrade --no-cache
 WORKDIR /app
 # Fix for permissions issue seen earlier

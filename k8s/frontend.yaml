@@ -49,3 +49,17 @@ spec:
         emptyDir: {}
       - name: log-volume
         emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: casper-frontend
+  namespace: caspmail-enterprise
+spec:
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080

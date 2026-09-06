@@ -81,7 +81,7 @@ export default function AdminAudit() {
             } catch (err) {
               console.error(err);
             }
-          }}>
+          }}>Export CSV</button>
           <button className="adm-btn adm-btn-ghost" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'adm-spin' : ''} /> Refresh
           </button>

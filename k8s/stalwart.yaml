@@ -19,7 +19,7 @@ data:
 
     [session.smtp.default]
 
-    auth-require = false
+    auth-require = true
 
 
     [directory.default]
@@ -50,7 +50,10 @@ spec:
       containers:
       - env:
         - name: STALWART_ADMIN_PASSWORD
-          value: admin_secure_password_123
+          valueFrom:
+            secretKeyRef:
+              name: casper-stalwart-admin
+              key: password
         image: stalwartlabs/mail-server:v0.9.3
         name: stalwart
         ports:
@@ -68,7 +71,7 @@ spec:
           name: jmap
         volumeMounts:
         - mountPath: /opt/stalwart/data
-          name: stalwart-data-ram
+          name: stalwart-data
         - mountPath: /opt/stalwart/etc/stalwart.toml
           name: stalwart-config-volume
           subPath: stalwart.toml
@@ -76,7 +79,7 @@ spec:
       - emptyDir:
           medium: Memory
           sizeLimit: 1Gi
-        name: stalwart-data-ram
+        name: stalwart-data
       - configMap:
           name: stalwart-config
         name: stalwart-config-volume
@@ -109,3 +112,15 @@ spec:
   selector:
     app: stalwart-mail
   type: LoadBalancer
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stalwart-data
+  namespace: caspermail-enterprise
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi

@@ -15,8 +15,12 @@ spec:
       labels:
         app: jaeger
     spec:
+      securityContext:
+        runAsNonRoot: true #:
       containers: # nosemgrep
-        - name: jaeger
+        - securityContext:
+            allowPrivilegeEscalation: false
+          name: jaeger
           image: jaegertracing/all-in-one:latest
           env:
             - name: COLLECTOR_OTLP_ENABLED

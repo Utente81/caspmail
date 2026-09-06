@@ -1,3 +1,5 @@
+import dns from 'dns';
+import { promisify } from 'util';
 import pool from '../db/pool.mjs';
 import { encryptData, decryptData } from '../services/vault.mjs';
 import { requireRole } from '../auth/verify.mjs';
@@ -675,8 +677,6 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     );
     reply.send({ data: rows });
   });
-  import dns from 'dns';
-  import { promisify } from 'util';
   const lookup = promisify(dns.lookup);
   
   function isPrivateIP(ip) {
@@ -717,11 +717,6 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
       ...options,
       headers
     });
-  }
-      return true;
-    } catch {
-      return false;
-    }
   }
   // Internal: execute a playbook action
   async function executeAction(server, pb, runId, tenantId, actor) {

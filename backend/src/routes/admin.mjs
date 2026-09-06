@@ -176,8 +176,11 @@ async function getTenantId(req) {
   if (isGlobalAdmin && req.headers['x-tenant-id']) {
     return req.headers['x-tenant-id'];
   }
-  return req.user?.tenant_id || req.user?.tenant || null;
-} = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
+  let tenantId = req.user?.tenant_id || req.user?.tenant || null;
+  if (!tenantId) {
+    const email = req.user?.email || req.user?.preferred_username;
+    if (!email) return null;
+    const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
     if (rows.length > 0) tenantId = rows[0].tenant_id;
   }
   return tenantId;

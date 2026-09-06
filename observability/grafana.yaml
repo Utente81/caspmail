@@ -34,8 +34,12 @@ spec:
       labels:
         app: grafana
     spec:
+      securityContext:
+        runAsNonRoot: true #:
       containers: # nosemgrep
-        - name: grafana
+        - securityContext:
+            allowPrivilegeEscalation: false
+          name: grafana
           image: grafana/grafana:latest
           ports:
             - containerPort: 3000

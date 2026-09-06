@@ -44,11 +44,15 @@ spec:
       labels:
         app: prometheus
     spec:
+      securityContext:
+        runAsNonRoot: true #:
       # Use the default service account which needs permissions to list pods
       # We will create a Role and RoleBinding for Prometheus
       serviceAccountName: prometheus
       containers: # nosemgrep
-        - name: prometheus
+        - securityContext:
+            allowPrivilegeEscalation: false
+          name: prometheus
           image: prom/prometheus:latest
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"

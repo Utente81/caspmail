@@ -89,6 +89,9 @@ spec:
           readOnly: true
         - mountPath: /tmp
           name: tmp
+        - mountPath: /etc/caspermail/db-ca
+          name: db-ca
+          readOnly: true
         - mountPath: /app/node_modules
           name: telemetry-node-modules
       imagePullSecrets:
@@ -115,6 +118,12 @@ spec:
       - name: secrets
         secret:
           secretName: casper-secrets
+      - name: db-ca
+        secret:
+          secretName: casper-cnpg-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
 ---
 apiVersion: v1
 kind: Service

@@ -13,34 +13,37 @@ spec:
       labels:
         app: pgadmin
     spec:
-      containers: # nosemgrep
-        - name: pgadmin
-          image: dpage/pgadmin4:8.8
-          env:
-            - name: PGADMIN_DEFAULT_EMAIL
-              value: admin@caspermail.com
-            - name: PGADMIN_DEFAULT_PASSWORD
-              value: admin123
-            - name: PGADMIN_SERVER_JSON_FILE
-              value: /pgadmin4/servers.json
-          ports:
-            - containerPort: 80
-          volumeMounts:
-            - name: pgadmin-servers
-              mountPath: /pgadmin4/servers.json
-              subPath: servers.json
-            - name: tmp-volume
-              mountPath: /tmp
-            - name: pgadmin-data
-              mountPath: /var/lib/pgadmin
+      containers:
+      - env:
+        - name: PGADMIN_DEFAULT_EMAIL
+          value: admin@caspermail.com
+        - name: PGADMIN_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: pgadmin_password
+              name: casper-secrets
+        - name: PGADMIN_SERVER_JSON_FILE
+          value: /pgadmin4/servers.json
+        image: dpage/pgadmin4:8.8
+        name: pgadmin
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - mountPath: /pgadmin4/servers.json
+          name: pgadmin-servers
+          subPath: servers.json
+        - mountPath: /tmp
+          name: tmp-volume
+        - mountPath: /var/lib/pgadmin
+          name: pgadmin-data
       volumes:
-        - name: pgadmin-servers
-          configMap:
-            name: pgadmin-servers
-        - name: tmp-volume
-          emptyDir: {}
-        - name: pgadmin-data
-          emptyDir: {}
+      - configMap:
+          name: pgadmin-servers
+        name: pgadmin-servers
+      - emptyDir: {}
+        name: tmp-volume
+      - emptyDir: {}
+        name: pgadmin-data
 ---
 apiVersion: v1
 kind: Service
@@ -49,37 +52,22 @@ metadata:
   namespace: caspermail-enterprise
 spec:
   ports:
-    - port: 80
-      targetPort: 80
+  - port: 80
+    targetPort: 80
   selector:
     app: pgadmin
 ---
 apiVersion: v1
+data:
+  servers.json: "{\n  \"Servers\": {\n    \"1\": {\n      \"Name\": \"Primary (Read-Write)\"\
+    ,\n      \"Group\": \"Servers\",\n      \"Host\": \"casper-cnpg-rw\",\n      \"\
+    Port\": 5432,\n      \"MaintenanceDB\": \"postgres\",\n      \"Username\": \"\
+    caspermail\",\n      \"SSLMode\": \"prefer\"\n    },\n    \"2\": {\n      \"Name\"\
+    : \"Replica (Read-Only)\",\n      \"Group\": \"Servers\",\n      \"Host\": \"\
+    casper-pg-postgresql-read\",\n      \"Port\": 5432,\n      \"MaintenanceDB\":\
+    \ \"postgres\",\n      \"Username\": \"caspermail\",\n      \"SSLMode\": \"prefer\"\
+    \n    }\n  }\n}\n"
 kind: ConfigMap
 metadata:
   name: pgadmin-servers
   namespace: caspermail-enterprise
-data:
-  servers.json: |
-    {
-      "Servers": {
-        "1": {
-          "Name": "Primary (Read-Write)",
-          "Group": "Servers",
-          "Host": "casper-cnpg-rw",
-          "Port": 5432,
-          "MaintenanceDB": "postgres",
-          "Username": "caspermail",
-          "SSLMode": "prefer"
-        },
-        "2": {
-          "Name": "Replica (Read-Only)",
-          "Group": "Servers",
-          "Host": "casper-pg-postgresql-read",
-          "Port": 5432,
-          "MaintenanceDB": "postgres",
-          "Username": "caspermail",
-          "SSLMode": "prefer"
-        }
-      }
-    }

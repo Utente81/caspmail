@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify";
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   LayoutDashboard,
@@ -163,7 +164,7 @@ export default function SOCDashboard() {
           const data = JSON.parse(e.data);
           const toast = document.createElement('div');
           toast.className = 'soc-toast-success';
-          toast.innerHTML = `<strong>SOAR Action:</strong> ${data.action} (${data.ip || ''}) <br>Triggered by: ${data.playbook}`;
+          toast.innerHTML = DOMPurify.sanitize `<strong>SOAR Action:</strong> ${data.action} (${data.ip || ''}) <br>Triggered by: ${data.playbook}`;
           document.body.appendChild(toast);
           setTimeout(() => toast.remove(), 5000);
         } catch {}

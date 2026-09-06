@@ -38,7 +38,7 @@ spec:
         - name: DATABASE_SSL
           value: 'false'
         - name: KEYCLOAK_ISSUER
-          value: https://auth.caspmail.com/realms/caspermail
+          value: https://auth.enterprise.caspmail.com/realms/caspermail
         - name: KEYCLOAK_JWKS_URI
           value: http://casper-keycloak:8080/realms/caspermail/protocol/openid-connect/certs
         - name: KEYCLOAK_INTERNAL_URL
@@ -50,23 +50,26 @@ spec:
         - name: SIEM_SECRET
           valueFrom:
             secretKeyRef:
-              name: casper-secrets
               key: siem_secret
+              name: casper-secrets
         - name: VAULT_TOKEN
           valueFrom:
             secretKeyRef:
               key: vault_token
               name: casper-secrets
         - name: CORS_ORIGINS
-          value: https://caspmail.com,https://mail.caspmail.com,https://soc.caspmail.com
+          value: https://enterprise.caspmail.com,https://mail.enterprise.caspmail.com,https://soc.enterprise.caspmail.com
         - name: SMTP_HOST
-          value: stalwart-service.caspermail.svc.cluster.local
+          value: stalwart-service.caspermail-enterprise.svc.cluster.local
         - name: SMTP_PORT
           value: '587'
         - name: SMTP_USER
           value: admin
         - name: SMTP_PASS
-          value: admin_secure_password_123
+          valueFrom:
+            secretKeyRef:
+              key: stalwart_password
+              name: casper-secrets
         image: ghcr.io/utente81/caspmail-backend:80ff5dc3ad65afd024387387120022c95c2f59a3
         imagePullPolicy: IfNotPresent
         name: backend
@@ -88,30 +91,6 @@ spec:
           name: tmp
         - mountPath: /app/node_modules
           name: telemetry-node-modules
-        - mountPath: /app/src/routes/soc.mjs
-          name: patch-soc
-          subPath: soc.mjs
-        - mountPath: /app/src/services/vault.mjs
-          name: patch-vault
-          subPath: vault.mjs
-        - mountPath: /app/src/app.mjs
-          name: patch-app
-          subPath: app.mjs
-        - mountPath: /app/src/db/pool.mjs
-          name: patch-pool
-          subPath: pool.mjs
-        - mountPath: /app/src/instrumentation.mjs
-          name: patch-instrumentation
-          subPath: instrumentation.mjs
-        - mountPath: /app/src/routes/admin.mjs
-          name: patch-admin-routes
-          subPath: admin.mjs
-        - mountPath: /app/src/routes/mail.mjs
-          name: patch-mail-routes
-          subPath: mail.mjs
-        - mountPath: /app/src/services/soar.mjs
-          name: patch-soar
-          subPath: soar.mjs
       imagePullSecrets:
       - name: ghcr-login-secret
       initContainers:
@@ -136,30 +115,6 @@ spec:
       - name: secrets
         secret:
           secretName: casper-secrets
-      - configMap:
-          name: backend-patch-soc
-        name: patch-soc
-      - configMap:
-          name: backend-vault
-        name: patch-vault
-      - configMap:
-          name: backend-app
-        name: patch-app
-      - configMap:
-          name: backend-pool
-        name: patch-pool
-      - configMap:
-          name: backend-instrumentation
-        name: patch-instrumentation
-      - configMap:
-          name: backend-admin-routes
-        name: patch-admin-routes
-      - configMap:
-          name: backend-mail-routes
-        name: patch-mail-routes
-      - configMap:
-          name: backend-soar
-        name: patch-soar
 ---
 apiVersion: v1
 kind: Service

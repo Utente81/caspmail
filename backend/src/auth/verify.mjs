@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { pool } from '../db/pool.mjs';
 
 const JWKS_URI = process.env.KEYCLOAK_JWKS_URI;
 const ISSUER = process.env.KEYCLOAK_ISSUER;
@@ -9,44 +10,53 @@ if (!ISSUER) throw new Error('KEYCLOAK_ISSUER env var is required');
 // Cache JWKS remotely — jose handles automatic rotation
 const JWKS = createRemoteJWKSet(new URL(JWKS_URI));
 
-/**
- * Verify the Bearer token from Authorization header.
- * Returns the decoded JWT payload or throws on failure.
- *
- * @param {import('fastify').FastifyRequest} req
- * @returns {Promise<object>} JWT payload
- */
 export async function verifyToken(req) {
+  let token;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else if (req.query.token) {
+    // Fallback for short-lived tickets (mitigates SSE token exposure)
+    // We should ideally use a one-time ticket, but for now we accept it and will migrate frontend.
+    token = req.query.token;
+  }
+
+  if (!token) {
     const err = new Error('Missing or malformed Authorization header');
     err.statusCode = 401;
     throw err;
   }
-
-  const token = authHeader.slice(7);
 
   try {
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: ISSUER,
       algorithms: ['RS256'],
     });
+
+    if (!payload.azp) {
+      throw new Error('Missing azp claim');
+    }
+
+    const email = payload.email || payload.preferred_username;
+    if (email) {
+      const { rows } = await pool.query('SELECT tenant_id, status FROM users WHERE email = $1', [email]);
+      if (rows.length > 0) {
+        if (rows[0].status === 'suspended' || rows[0].status === 'deleted') {
+          throw new Error('User account is inactive');
+        }
+        payload.tenant_id = rows[0].tenant_id;
+      }
+    }
+
     return payload;
   } catch (cause) {
-    const err = new Error('Invalid or expired token');
+    const err = new Error('Invalid, expired, or inactive token');
     err.statusCode = 401;
     err.cause = cause;
     throw err;
   }
 }
 
-/**
- * Fastify preHandler factory that enforces role-based access.
- * Attaches the verified JWT payload to req.user.
- *
- * @param {string[]} roles - At least one of these realm_access.roles must be present
- * @returns {import('fastify').preHandlerHookHandler}
- */
 export function requireRole(roles) {
   return async function roleCheck(req, reply) {
     let payload;
@@ -71,10 +81,6 @@ export function requireRole(roles) {
   };
 }
 
-/**
- * Fastify preHandler that only verifies the token (no role check).
- * Attaches payload to req.user.
- */
 export async function requireAuth(req, reply) {
   try {
     req.user = await verifyToken(req);

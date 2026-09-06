@@ -172,10 +172,12 @@ async function deleteKeycloakUser(email) {
 }
 
 async function getTenantId(req) {
-  let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
-  if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
-    const email = req.user.email || req.user.preferred_username;
-    const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
+  const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+  if (isGlobalAdmin && req.headers['x-tenant-id']) {
+    return req.headers['x-tenant-id'];
+  }
+  return req.user?.tenant_id || req.user?.tenant || null;
+} = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
     if (rows.length > 0) tenantId = rows[0].tenant_id;
   }
   return tenantId;
@@ -211,12 +213,14 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/retention/purge', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
     const { rowCount } = await pool.query(`
       DELETE FROM e2ee_messages
       WHERE deleted_at IS NOT NULL
         AND deleted_at < NOW() - INTERVAL '30 days'
         AND legal_hold = FALSE
-    `);
+        AND tenant_id = $1
+    `, [tenantId]);
     reply.send({ purged_count: rowCount });
   });
 
@@ -328,7 +332,13 @@ export default async function adminRoutes(app) {
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
-    const tenantId  = req.query.tenant_id;
+    
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    let tenantId = req.query.tenant_id;
+    if (!isGlobalAdmin) {
+      tenantId = req.user?.tenant_id;
+    }
+    
 
     let query = 'SELECT * FROM users';
     const params = [];
@@ -728,7 +738,7 @@ export default async function adminRoutes(app) {
 
     // If status is completed and type is erasure, delete all messages!
     if (status === 'completed' && rows[0].request_type === 'erasure') {
-      await pool.query('DELETE FROM e2ee_messages WHERE (from_email = $1 OR to_email = $1) AND legal_hold = FALSE', [rows[0].user_email]);
+      await pool.query('DELETE FROM e2ee_messages WHERE (from_email = $1 OR to_email = $1) AND legal_hold = FALSE AND tenant_id = $2', [rows[0].user_email, tenantId]);
     }
 
     reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
@@ -988,9 +998,12 @@ export default async function adminRoutes(app) {
 
   app.delete('/domains/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
-    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
+    
+    const tenantId = await getTenantId(req);
+    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    
     if (rows.length === 0) return reply.status(404).send({ error: 'Domain not found' });
-    await pool.query('DELETE FROM domains WHERE id = $1', [id]);
+    await pool.query('DELETE FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'delete', 'domain', $3, $4)`,
@@ -1014,7 +1027,7 @@ export default async function adminRoutes(app) {
     const isGlobalAdmin = userRoles.includes('casper_admin');
 
     if (!isGlobalAdmin) {
-      let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
+      let tenantId = req.user?.tenant_id || req.user?.tenant;
       if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
         const email = req.user.email || req.user.preferred_username;
         const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);

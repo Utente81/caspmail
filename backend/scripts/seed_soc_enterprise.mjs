@@ -12,15 +12,16 @@ async function seed() {
     await client.query('BEGIN');
 
     // 1. Find or create a tenant
-    let { rows: tenants } = await client.query(`SELECT id FROM tenants WHERE domain = $1`, [TENANT_DOMAIN]);
+    let { rows: tenants } = await client.query(`SELECT tenant_id as id FROM domains WHERE domain = $1`, [TENANT_DOMAIN]);
     let tenantId;
     if (tenants.length === 0) {
       console.log(`Creating tenant ${TENANT_DOMAIN}...`);
       const res = await client.query(
-        `INSERT INTO tenants (name, domain) VALUES ($1, $2) RETURNING id`,
-        ['Acme Corp', TENANT_DOMAIN]
+        `INSERT INTO tenants (name) VALUES ($1) RETURNING id`,
+        ['Acme Corp']
       );
       tenantId = res.rows[0].id;
+      await client.query(`INSERT INTO domains (tenant_id, domain, verified) VALUES ($1, $2, true)`, [tenantId, TENANT_DOMAIN]);
     } else {
       tenantId = tenants[0].id;
       console.log(`Found tenant ${TENANT_DOMAIN} (id: ${tenantId})`);
@@ -33,7 +34,7 @@ async function seed() {
     await client.query('DELETE FROM soc_cases WHERE tenant_id = $1', [tenantId]);
     await client.query('DELETE FROM soc_alerts WHERE tenant_id = $1', [tenantId]);
     await client.query('DELETE FROM soc_events WHERE tenant_id = $1', [tenantId]);
-    await client.query('DELETE FROM audit_log WHERE tenant_id = $1 AND action IN (''update_policy'', ''disable_user'', ''export_data'', ''login'', ''delete_user'')', [tenantId]);
+    await client.query(`DELETE FROM audit_log WHERE tenant_id = $1 AND action IN ('update_policy', 'disable_user', 'export_data', 'login', 'delete_user')`, [tenantId]);
 
     // 3. Seed SOAR Playbooks
     console.log('Seeding SOAR Playbooks...');

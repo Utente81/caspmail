@@ -28,25 +28,15 @@ function zeroTrustGuardHook(req, reply, done) {
 const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook] };
 
   const socStreamGuard = {
-    preHandler: async (req, reply) => {
-      if (!req.headers.authorization && req.query?.token) {
-        req.headers.authorization = `Bearer ${req.query.token}`;
-      }
-      return requireRole(SOC_ROLES)(req, reply);
+    preHandler: async (req, reply) => {      return requireRole(SOC_ROLES)(req, reply);
     },
   };
   async function getTenantId(req) {
-    const user = req.user;
-    const { rows } = await pool.query(
-      'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-      [user.email || user.preferred_username]
-    );
-    if (rows[0]?.tenant_id) return rows[0].tenant_id;
-    const roles = user?.realm_access?.roles || user?.roles || [];
-    if (roles.some((role) => ['admin', 'casper_admin'].includes(role))) {
-      return req.query?.tenant_id || 'system';
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (isGlobalAdmin && req.query.tenant_id) {
+      return req.query.tenant_id;
     }
-    return null;
+    return req.user?.tenant_id || req.user?.tenant || null;
   }
   // ─── Overview ─────────────────────────────────────────────────────────────
   app.get('/overview', socGuard, async (req, reply) => {
@@ -55,25 +45,25 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const [metrics, alerts, cases] = await Promise.all([
       pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 )
            AND created_at > NOW() - INTERVAL '24 hours') AS events_24h,
-          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 )
            AND severity IN ('high','critical')
            AND created_at > NOW() - INTERVAL '24 hours') AS high_severity_24h,
-          (SELECT COUNT(*) FROM soc_alerts WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_alerts,
-          (SELECT COUNT(*) FROM soc_cases  WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_cases
+          (SELECT COUNT(*) FROM soc_alerts WHERE (tenant_id = $1 ) AND status='open') AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE (tenant_id = $1 ) AND status='open') AS open_cases
       `, [tenantId]),
       pool.query(`
         SELECT a.id, a.severity, a.message, a.status, a.created_at,
                e.type AS event_type, e.source_ip
         FROM soc_alerts a
         LEFT JOIN soc_events e ON e.id = a.event_id
-        WHERE (a.tenant_id = $1 OR a.tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+        WHERE (a.tenant_id = $1 )
         ORDER BY a.created_at DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
         SELECT id, title, severity, status, type, assigned_to, created_at
-        FROM soc_cases WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+        FROM soc_cases WHERE (tenant_id = $1 )
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
     ]);
@@ -83,7 +73,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           date_trunc('hour', created_at) AS time_bucket,
           COUNT(*) AS event_count
         FROM soc_events
-        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 ) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
         ORDER BY 1 ASC
       `, [tenantId]),
@@ -92,7 +82,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           LOWER(severity) AS severity,
           COUNT(*) AS count
         FROM soc_events
-        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 ) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
       `, [tenantId]),
     ]);
@@ -685,14 +675,49 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     );
     reply.send({ data: rows });
   });
-  function isSafeUrl(urlStr) {
+  import dns from 'dns';
+  import { promisify } from 'util';
+  const lookup = promisify(dns.lookup);
+  
+  function isPrivateIP(ip) {
+    if (ip === '::1' || ip === '0.0.0.0') return true;
+    if (ip.startsWith('127.')) return true;
+    if (ip.startsWith('10.')) return true;
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('169.254.')) return true;
+    if (ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) return true;
+    // Basic IPv6 private checks
+    if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd') || ip.toLowerCase().startsWith('fe80')) return true;
+    return false;
+  }
+
+  async function safeFetch(urlStr, options = {}) {
+    let parsed;
     try {
-      const parsed = new URL(urlStr);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-      const host = parsed.hostname;
-      if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
-        return false;
-      }
+      parsed = new URL(urlStr);
+    } catch {
+      throw new Error('Invalid URL');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Invalid protocol');
+    }
+
+    const { address } = await lookup(parsed.hostname);
+    if (isPrivateIP(address)) {
+      throw new Error('Unsafe IP address resolved');
+    }
+
+    const originalHost = parsed.hostname;
+    parsed.hostname = address;
+    
+    const headers = options.headers || {};
+    headers['Host'] = originalHost;
+    
+    return await fetch(parsed.toString(), {
+      ...options,
+      headers
+    });
+  }
       return true;
     } catch {
       return false;
@@ -753,8 +778,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         case 'webhook': {
           const url = pb.config?.url;
           if (!url) throw new Error('No webhook URL configured');
-          if (!isSafeUrl(url)) throw new Error('Unsafe webhook URL (SSRF protection)');
-          const res = await fetch(url, {
+          const res = await safeFetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(pb.config?.headers || {}) },
             body: JSON.stringify({ playbook: pb.name, trigger: pb.trigger_type, timestamp: new Date().toISOString() }),
@@ -793,14 +817,13 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         case 'slack_notify': {
           const webhookUrl = pb.config?.webhook_url;
           if (!webhookUrl) throw new Error('No webhook_url in config');
-          if (!isSafeUrl(webhookUrl)) throw new Error('Unsafe webhook URL (SSRF protection)');
           const payload = {
             text: pb.config?.message
               || `*[CaspMail SOC]* Playbook *${pb.name}* triggered by \`${pb.trigger_type}\``,
             username: 'CaspMail SOC',
             icon_emoji: ':shield:',
           };
-          const res = await fetch(webhookUrl, {
+          const res = await safeFetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -1233,7 +1256,7 @@ export function startSoarWorker(app) {
         );
         app.log.info({ ip: row.source_ip, tenant_id: row.tenant_id }, 'SOAR Lite: Created new case');
         if (app.io) {
-          app.io.emit('soc:new_alert', { title: title, ip: row.source_ip });
+      app.io.to(tenantId || "system").emit('soc:new_alert', { title: title, ip: row.source_ip });
         }
       }
     } catch (err) {

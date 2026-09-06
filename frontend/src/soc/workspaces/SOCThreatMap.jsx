@@ -1,3 +1,4 @@
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Activity, ShieldAlert, Target, Crosshair } from 'lucide-react'
 import { ErrorBoundary } from './ErrorBoundary.jsx'

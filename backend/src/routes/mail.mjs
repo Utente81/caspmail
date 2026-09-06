@@ -36,20 +36,22 @@ export default async function mailRoutes(app) {
   // Helper: look up user row from JWT email
   async function getUser(jwtPayload) {
     let email = jwtPayload.email || jwtPayload.preferred_username || jwtPayload.sub;
+    let tenantId = jwtPayload.tenant_id || jwtPayload.tenant;
+    
     if (!email) throw new Error("Missing email, username and sub in JWT");
+    if (!tenantId) throw new Error("Missing tenant_id in JWT");
 
     let { rows } = await pool.query(
-      'SELECT * FROM users WHERE email = $1 LIMIT 1',
-      [email]
+      'SELECT * FROM users WHERE email = $1 AND tenant_id = $2 LIMIT 1',
+      [email, tenantId]
     );
 
     if (rows.length === 0) {
       const name = jwtPayload.name || email.split('@')[0];
-      const tenant = 'caspmail';
       try {
         const res = await pool.query(
           `INSERT INTO users (tenant_id, email, name, quota_mb) VALUES ($1, $2, $3, 500) RETURNING *`,
-          [tenant, email, name]
+          [tenantId, email, name]
         );
         rows = res.rows;
       } catch (e) {
@@ -58,6 +60,9 @@ export default async function mailRoutes(app) {
     }
     
     if (!rows[0]) throw new Error("User row is empty after insert");
+    if (rows[0].status === 'suspended' || rows[0].status === 'deleted') {
+      throw new Error("User account is inactive");
+    }
     return rows[0];
   }
 

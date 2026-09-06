@@ -14,12 +14,13 @@ spec:
 apiVersion: v1
 data:
   vault.json: "{\n  \"listener\": {\n    \"tcp\": {\n      \"address\": \"0.0.0.0:8200\"\
-    ,\n      \"tls_disable\": 1\n    }\n  },\n  \"storage\": {\n    \"file\": {\n\
-    \      \"path\": \"/vault/file\"\n    }\n  },\n  \"seal\": {\n    \"transit\"\
-    : {\n      \"address\": \"http://transit-vault:8200\",\n      \"disable_renewal\"\
-    : \"false\",\n      \"key_name\": \"autounseal\",\n      \"mount_path\": \"transit\"\
-    ,\n      \"tls_skip_verify\": \"true\"\n    }\n  },\n  \"ui\": true,\n  \"disable_mlock\"\
-    : true\n}\n"
+    ,\n      \"tls_disable\": 0,\n      \"tls_cert_file\": \"/vault/tls/tls.crt\"\
+    ,\n      \"tls_key_file\": \"/vault/tls/tls.key\"\n    }\n  },\n  \"storage\"\
+    : {\n    \"file\": {\n      \"path\": \"/vault/file\"\n    }\n  },\n  \"seal\"\
+    : {\n    \"transit\": {\n      \"address\": \"https://transit-vault:8200\",\n\
+    \      \"disable_renewal\": \"false\",\n      \"key_name\": \"autounseal\",\n\
+    \      \"mount_path\": \"transit\",\n      \"tls_skip_verify\": \"false\"\n  \
+    \  }\n  },\n  \"ui\": true,\n  \"disable_mlock\": true\n}"
 kind: ConfigMap
 metadata:
   name: vault-config
@@ -67,6 +68,9 @@ spec:
           name: config
         - mountPath: /vault/file
           name: data
+        - mountPath: /vault/tls
+          name: tls
+          readOnly: true
       nodeSelector:
         tier: secure-data
       tolerations:
@@ -81,6 +85,9 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: vault-data
+      - name: tls
+        secret:
+          secretName: vault-tls
 ---
 apiVersion: v1
 kind: Service

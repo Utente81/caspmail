@@ -36,7 +36,7 @@ spec:
         - name: DB_NAME
           value: caspermail
         - name: DATABASE_SSL
-          value: 'false'
+          value: 'true'
         - name: KEYCLOAK_ISSUER
           value: https://auth.enterprise.caspmail.com/realms/caspermail
         - name: KEYCLOAK_JWKS_URI

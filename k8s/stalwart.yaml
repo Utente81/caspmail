@@ -51,7 +51,7 @@ spec:
       - env:
         - name: STALWART_ADMIN_PASSWORD
           value: admin_secure_password_123
-        image: stalwartlabs/mail-server:latest
+        image: stalwartlabs/mail-server:v0.9.3
         name: stalwart
         ports:
         - containerPort: 25

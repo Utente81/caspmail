@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS vendors (
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     contact_email VARCHAR(255),
-    risk_score INTEGER,
+    risk_level VARCHAR(50),
+    service_provided TEXT,
     status VARCHAR(50) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -49,8 +50,10 @@ CREATE TABLE IF NOT EXISTS vendor_assessments (
     vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
     assessor_email VARCHAR(255),
     score INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
     findings JSONB,
-    assessment_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    assessment_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE IF NOT EXISTS compliance_reports (
@@ -68,8 +71,9 @@ CREATE TABLE IF NOT EXISTS vendor_dpas (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
-    file_path TEXT NOT NULL,
+    file_path TEXT,
     signed_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
     status VARCHAR(50) DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -81,6 +85,7 @@ CREATE TABLE IF NOT EXISTS ropa_records (
     purpose TEXT,
     data_categories TEXT,
     data_subjects TEXT,
+    legal_basis VARCHAR(255),
     retention_period VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -89,7 +94,7 @@ CREATE TABLE IF NOT EXISTS ropa_records (
 CREATE TABLE IF NOT EXISTS dsr_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
-    subject_email VARCHAR(255) NOT NULL,
+    user_email VARCHAR(255) NOT NULL,
     request_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) DEFAULT 'open',
     details TEXT,
@@ -112,7 +117,9 @@ CREATE TABLE IF NOT EXISTS phishing_targets (
     campaign_id UUID REFERENCES phishing_campaigns(id) ON DELETE CASCADE,
     user_email VARCHAR(255) NOT NULL,
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
+    message_id UUID,
     status VARCHAR(50) DEFAULT 'pending',
+    opened_at TIMESTAMP WITH TIME ZONE,
     clicked_at TIMESTAMP WITH TIME ZONE,
     reported_at TIMESTAMP WITH TIME ZONE,
     UNIQUE(campaign_id, user_email)
@@ -124,10 +131,13 @@ CREATE TABLE IF NOT EXISTS vulnerabilities (
     title VARCHAR(255) NOT NULL,
     description TEXT,
     severity VARCHAR(50) NOT NULL,
+    cvss_score NUMERIC,
+    component VARCHAR(255),
     status VARCHAR(50) DEFAULT 'open',
-    cve_id VARCHAR(100),
+    cve_id VARCHAR(100) UNIQUE,
     asset_id UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE,
     resolved_at TIMESTAMP WITH TIME ZONE
 );
 
@@ -137,6 +147,8 @@ CREATE TABLE IF NOT EXISTS assets (
     hostname VARCHAR(255),
     ip_address VARCHAR(100),
     asset_type VARCHAR(100),
+    status VARCHAR(50),
+    risk_level VARCHAR(50),
     criticality VARCHAR(50),
     last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

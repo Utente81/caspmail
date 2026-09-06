@@ -254,7 +254,7 @@ export default function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, 
                   </div>
                 )}
                 
-                <iframe className="mail-detail-body" srcDoc={DOMPurify.sanitize(bodyText)} sandbox="" style={{width: \'100%\', minHeight: \'400px\', border: \'none\'}} />
+                <iframe className="mail-detail-body" srcDoc={DOMPurify.sanitize(bodyText)} sandbox="" style={{width: '100%', minHeight: '400px', border: 'none'}} />
 
                 {attachments.length > 0 && (
                   <div className="mail-attachments-list" style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px' }}>

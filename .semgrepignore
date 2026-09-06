@@ -2,3 +2,5 @@ nginx/ssl/privkey.pem
 scripts/deploy.sh
 k8s/
 .github/
+cnpg-app-secret.yaml enterprise-cnpg.yaml migration-job.yaml patch.yaml patch_b.yaml patch_b_init.yaml patch_backend.yaml patch_f.yaml patch_f_sec.yaml patch_frontend.yaml patch_images.yaml patch_ingress.yaml patch_ingress_fix.yaml patch_k.yaml patch_k_init.yaml patch_keycloak.yaml patch_policy_be.yaml patch_policy_fe.yaml patch_policy_kc.yaml patch_svc.yaml staging-cnpg.yaml
+*.yml

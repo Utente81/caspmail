@@ -25,6 +25,7 @@ APPLY=0
 COMMIT=0
 PUSH=0
 NPM_FIX=0
+RESOLVE_LOCK=0
 PRUNE_DOCKER=0
 CLUSTER_SECRETS=0
 ALLOW_DIRTY=0
@@ -41,6 +42,8 @@ Mode:
 
 Git:
   --npm-fix              Run npm audit fix in backend and frontend
+  --resolve-lock         Regenerate frontend/package-lock.json if it contains
+                         Git conflict markers; package.json is the source of truth
   --commit               Commit changes after all local checks pass
   --push                 Push only arena/01a07584-caspmail to origin
   --allow-dirty          Allow an already dirty working tree (not recommended)
@@ -71,6 +74,7 @@ while (($#)); do
     --plan) APPLY=0 ;;
     --apply) APPLY=1 ;;
     --npm-fix) NPM_FIX=1 ;;
+    --resolve-lock) RESOLVE_LOCK=1 ;;
     --commit) COMMIT=1 ;;
     --push) PUSH=1 ;;
     --prune-docker) PRUNE_DOCKER=1 ;;
@@ -103,8 +107,16 @@ if ((SKIP_GIT == 0)); then
   [[ "$current_branch" == "$BRANCH" ]] || die "Wrong branch: $current_branch (expected $BRANCH)"
 
   if [[ -n "$(git status --porcelain)" && "$ALLOW_DIRTY" != 1 ]]; then
-    git status --short >&2
-    die 'Working tree is already dirty; commit/stash it or use --allow-dirty'
+    lock_only=1
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      [[ "$path" == 'frontend/package-lock.json' ]] || lock_only=0
+    done < <(git status --porcelain | sed -E 's/^.. //')
+    if ! ((APPLY && RESOLVE_LOCK && lock_only)) || [[ ! -f frontend/package-lock.json ]]; then
+      git status --short >&2
+      die 'Working tree is already dirty; commit/stash it or use --allow-dirty'
+    fi
+    warn 'Only frontend/package-lock.json is conflicted; --resolve-lock will regenerate it from package.json'
   fi
 
   git status --short --branch | tee "$REPORT_DIR/git-status.txt"
@@ -159,6 +171,27 @@ run_js_check() {
     fi
   done < <(find "$REPO_DIR/backend/src" "$REPO_DIR/backend/scripts" -type f -name '*.mjs' -print0)
   [[ "$errors" == 0 ]] || die "JavaScript syntax errors: $errors"
+}
+
+resolve_frontend_lockfile() {
+  cd "$REPO_DIR"
+  local lock='frontend/package-lock.json'
+  [[ -f "$lock" ]] || return 0
+  if ! grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$lock"; then
+    return 0
+  fi
+  ((APPLY && RESOLVE_LOCK)) || die "$lock contains Git conflict markers; rerun with --apply --resolve-lock"
+  if grep -qE '^(<<<<<<<|=======|>>>>>>>)' frontend/package.json 2>/dev/null; then
+    die 'frontend/package.json also contains Git conflict markers; resolve it before regenerating the lockfile'
+  fi
+  cp -p "$lock" "$REPORT_DIR/package-lock.conflicted.json"
+  rm -f "$lock"
+  log 'Regenerating frontend/package-lock.json from frontend/package.json'
+  (cd frontend && npm install --package-lock-only --ignore-scripts)
+  if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$lock"; then
+    die "$lock still contains conflict markers after regeneration"
+  fi
+  git add "$lock"
 }
 
 apply_deterministic_git_fixes() {
@@ -464,8 +497,12 @@ commit_and_push() {
 log "Report directory: $REPORT_DIR"
 if ((SKIP_GIT == 0)); then
   if ((APPLY)); then
+    resolve_frontend_lockfile
     apply_deterministic_git_fixes
   else
+    if [[ -f frontend/package-lock.json ]] && grep -qE '^(<<<<<<<|=======|>>>>>>>)' frontend/package-lock.json; then
+      warn 'frontend/package-lock.json contains Git conflict markers; use --apply --resolve-lock'
+    fi
     log 'Plan mode: Git files will not be modified'
   fi
   run_git_checks

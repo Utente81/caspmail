@@ -29,6 +29,7 @@ export async function verifyToken(req) {
   try {
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: ISSUER,
+      audience: process.env.KEYCLOAK_AUDIENCE || 'account',
       algorithms: ['RS256'],
     });
     return payload;

@@ -63,7 +63,7 @@ export default function LoginApp() {
     const storageKey = `${app.id}_pkce_verifier`
     const verifier = generateVerifier()
     const challenge = await generateChallenge(verifier)
-    sessionStorage.setItem(storageKey, verifier)
+    window.memoryStorage.setItem(storageKey, verifier)
 
     const redirectUri = window.location.origin + app.redirectPath
     const url = new URL(`${ISSUER}/protocol/openid-connect/auth`)

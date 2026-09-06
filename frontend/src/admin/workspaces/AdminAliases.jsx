@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, AlertTriangle, Search, Plus, Trash2, Edit } from 'lucide-react'
 
 function api(path, options = {}) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = window.memoryStorage.getItem('caspmail_access_token')
   return fetch(`/api/admin${path}`, {
     ...options,
     headers: {

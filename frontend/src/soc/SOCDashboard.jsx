@@ -134,8 +134,8 @@ export default function SOCDashboard() {
   const dropRef = useRef(null)
   const esRef = useRef(null)
 
-  const userName = sessionStorage.getItem('caspmail_user_name') || 'Analyst'
-  const userRole = sessionStorage.getItem('caspmail_user_role') || 'SOC Analyst'
+  const userName = window.memoryStorage.getItem('caspmail_user_name') || 'Analyst'
+  const userRole = window.memoryStorage.getItem('caspmail_user_role') || 'SOC Analyst'
 
   const connectSSE = useCallback(async () => {
     if (esRef.current) {
@@ -223,9 +223,9 @@ export default function SOCDashboard() {
   }, [])
 
       function handleLogout() {
-    const idToken = sessionStorage.getItem('caspmail_id_token')
-    const clientId = sessionStorage.getItem('caspmail_client_id') || 'caspermail-web'
-    sessionStorage.clear()
+    const idToken = window.memoryStorage.getItem('caspmail_id_token')
+    const clientId = window.memoryStorage.getItem('caspmail_client_id') || 'caspermail-web'
+    window.memoryStorage.clear()
     const params = new URLSearchParams({ client_id: clientId, post_logout_redirect_uri: window.location.origin + '/console/login' })
     if (idToken && idToken !== 'null' && idToken !== 'undefined') params.set('id_token_hint', idToken)
     const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'

@@ -43,7 +43,7 @@ spec:
             secretKeyRef:
               key: minio_root_password
               name: casper-secrets
-        image: minio/minio:latest
+        image: minio/minio:RELEASE.2024-01-01T00-00-00Z
         name: minio
         ports:
         - containerPort: 9000

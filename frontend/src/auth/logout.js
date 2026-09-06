@@ -1,9 +1,9 @@
 const ISSUER = 'https://auth.caspmail.com/realms/caspermail';
 
 export function logout(clientId) {
-  const idToken = sessionStorage.getItem('caspmail_id_token');
-  const resolvedClientId = clientId || sessionStorage.getItem('caspmail_client_id') || 'caspermail-web';
-  sessionStorage.clear();
+  const idToken = window.memoryStorage.getItem('caspmail_id_token');
+  const resolvedClientId = clientId || window.memoryStorage.getItem('caspmail_client_id') || 'caspermail-web';
+  window.memoryStorage.clear();
 
   const params = new URLSearchParams({
     client_id: resolvedClientId,

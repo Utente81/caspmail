@@ -8,7 +8,7 @@ import {
 } from '../crypto.js'
 
 function apiFetch(path, opts = {}) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },

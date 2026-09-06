@@ -4,7 +4,7 @@ import { ChevronLeft, Reply, Forward, ShieldAlert, Star, Archive, AlertOctagon, 
 import { decryptMessage, decryptAttachment, loadPreKey } from '../crypto.js'
 
 function apiGet(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
@@ -12,7 +12,7 @@ function apiGet(path) {
 }
 
 function apiPatch(path, body) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   const headers = { Authorization: `Bearer ${token}` }
   const options = { method: 'PATCH', headers }
   if (body) {
@@ -26,7 +26,7 @@ function apiPatch(path, body) {
 }
 
 function apiDelete(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
@@ -104,7 +104,7 @@ export default function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, 
     try {
       const res = await fetch(`/api/v4/soc/simulations/report/${msg.id}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
+        headers: { Authorization: `Bearer ${(window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))}` }
       });
       const data = await res.json();
       alert(data.message || 'Reported');
@@ -254,7 +254,7 @@ export default function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, 
                   </div>
                 )}
                 
-                <div className="mail-detail-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bodyText) }} /* nosemgrep */ />
+                <iframe className="mail-detail-body" srcDoc={DOMPurify.sanitize(bodyText)} sandbox="" style={{width: \'100%\', minHeight: \'400px\', border: \'none\'}} />
 
                 {attachments.length > 0 && (
                   <div className="mail-attachments-list" style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px' }}>

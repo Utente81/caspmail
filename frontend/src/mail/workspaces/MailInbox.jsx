@@ -3,7 +3,7 @@ import { RefreshCw, Mail, Lock, Unlock, AlertCircle, ChevronLeft, Paperclip, Dow
 import { decryptMessage } from '../crypto.js'
 
 function apiGet(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
@@ -11,7 +11,7 @@ function apiGet(path) {
 }
 
 function apiPatch(path, body) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   const headers = { Authorization: `Bearer ${token}` }
   const options = { method: 'PATCH', headers }
   if (body) {
@@ -25,7 +25,7 @@ function apiPatch(path, body) {
 }
 
 function apiDelete(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()

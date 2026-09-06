@@ -21,7 +21,7 @@ function BootScreen({ error }) {
           <span style={{ fontSize: '.82rem' }}>{error}</span>
           <button
             type="button"
-            onClick={() => { sessionStorage.clear(); window.location.href = '/console/login' }}
+            onClick={() => { window.memoryStorage.clear(); window.location.href = '/console/login' }}
             style={{
               marginTop: 16, padding: '8px 20px', borderRadius: 8,
               background: 'rgba(59,130,246,.12)', border: '1px solid rgba(59,130,246,.25)',
@@ -47,7 +47,7 @@ export default function SOCApp() {
         if (window.location.search.includes('code=')) {
           const params = new URLSearchParams(window.location.search)
           const code = params.get('code')
-          const verifier = sessionStorage.getItem('soc_pkce_verifier')
+          const verifier = window.memoryStorage.getItem('soc_pkce_verifier')
           const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
 
           const res = await fetch(`${issuer}/protocol/openid-connect/token`, {
@@ -63,26 +63,26 @@ export default function SOCApp() {
           })
           if (!res.ok) throw new Error('Token exchange failed')
           const data = await res.json()
-          sessionStorage.setItem(STORAGE_KEY, data.access_token)
-          if (data.id_token) sessionStorage.setItem('caspmail_id_token', data.id_token)
-          if (data.refresh_token) sessionStorage.setItem('caspmail_refresh_token', data.refresh_token)
-          sessionStorage.setItem('caspmail_client_id', 'caspermail-soc')
+          window.memoryStorage.setItem(STORAGE_KEY, data.access_token)
+          if (data.id_token) window.memoryStorage.setItem('caspmail_id_token', data.id_token)
+          if (data.refresh_token) window.memoryStorage.setItem('caspmail_refresh_token', data.refresh_token)
+          window.memoryStorage.setItem('caspmail_client_id', 'caspermail-soc')
           const payload = JSON.parse(atob(data.access_token.split('.')[1]))
-          sessionStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'Analyst')
-          sessionStorage.setItem('caspmail_user_email', payload.email || payload.preferred_username || '')
+          window.memoryStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'Analyst')
+          window.memoryStorage.setItem('caspmail_user_email', payload.email || payload.preferred_username || '')
           const roles = payload?.realm_access?.roles || []
           const role = roles.includes('soc_manager') ? 'SOC Manager'
             : roles.includes('soc_analyst') ? 'SOC Analyst'
             : roles.includes('admin') ? 'Admin'
             : 'SOC User'
-          sessionStorage.setItem('caspmail_user_role', role)
+          window.memoryStorage.setItem('caspmail_user_role', role)
           window.history.replaceState({}, '', '/console/soc')
         }
 
-        let token = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY)
+        let token = window.memoryStorage.getItem(STORAGE_KEY) || window.memoryStorage.getItem(STORAGE_KEY)
         if (token) {
-          sessionStorage.setItem(STORAGE_KEY, token)
-          localStorage.setItem(STORAGE_KEY, token)
+          window.memoryStorage.setItem(STORAGE_KEY, token)
+          window.memoryStorage.setItem(STORAGE_KEY, token)
         } else {
           window.location.href = '/console/login'
           return
@@ -95,7 +95,7 @@ export default function SOCApp() {
         try {
           const payload = JSON.parse(atob(token.split('.')[1]))
           if (payload.exp && payload.exp * 1000 < Date.now()) {
-            sessionStorage.removeItem(STORAGE_KEY)
+            window.memoryStorage.removeItem(STORAGE_KEY)
             window.location.href = '/console/login'
             return
           }
@@ -105,7 +105,7 @@ export default function SOCApp() {
           }
         } catch (e) {
           if (e.message.includes('Insufficient')) throw e
-          sessionStorage.removeItem(STORAGE_KEY)
+          window.memoryStorage.removeItem(STORAGE_KEY)
           window.location.href = '/console/login'
           return
         }

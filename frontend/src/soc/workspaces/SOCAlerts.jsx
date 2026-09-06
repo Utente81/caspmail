@@ -49,7 +49,7 @@ export default function SOCAlerts() {
   const fetchAlerts = useCallback(async () => {
     setError(null)
     try {
-      const token = sessionStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch('/api/v4/soc/alerts', {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -73,7 +73,7 @@ export default function SOCAlerts() {
     // Optimistic update
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
     try {
-      const token = sessionStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch(`/api/v4/soc/alerts/${id}`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

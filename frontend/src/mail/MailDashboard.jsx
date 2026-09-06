@@ -63,13 +63,13 @@ export default function MailDashboard() {
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
 
-  const userName  = sessionStorage.getItem('caspmail_user_name')  || localStorage.getItem('caspmail_user_name') || 'User'
-  const userRole  = sessionStorage.getItem('caspmail_user_role')  || localStorage.getItem('caspmail_user_role') || 'User'
-  const userEmail = sessionStorage.getItem('caspmail_user_email') || localStorage.getItem('caspmail_user_email') || ''
+  const userName  = window.memoryStorage.getItem('caspmail_user_name')  || window.memoryStorage.getItem('caspmail_user_name') || 'User'
+  const userRole  = window.memoryStorage.getItem('caspmail_user_role')  || window.memoryStorage.getItem('caspmail_user_role') || 'User'
+  const userEmail = window.memoryStorage.getItem('caspmail_user_email') || window.memoryStorage.getItem('caspmail_user_email') || ''
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+      const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
       if (!token) return
       const rDash = await fetch('/api/me/dashboard', { headers: { Authorization: `Bearer ${token}` } })
       if (rDash.ok) {
@@ -94,7 +94,7 @@ export default function MailDashboard() {
     })
     
     fetch('/api/e2ee/folders', {
-      headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
+      headers: { Authorization: `Bearer ${(window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))}` }
     })
       .then(r => r.json())
       .then(d => setFolders(d.data || []))
@@ -107,7 +107,7 @@ export default function MailDashboard() {
     const checkNewMail = async () => {
       await fetchUnreadCount()
       try {
-        const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+        const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
         if (!token) return
         
         const rMsg = await fetch('/api/e2ee/messages?folder=inbox&limit=1', { headers: { Authorization: `Bearer ${token}` } })
@@ -160,9 +160,9 @@ export default function MailDashboard() {
   }, [])
 
       function handleLogout() {
-    const idToken = sessionStorage.getItem('caspmail_id_token')
-    const clientId = sessionStorage.getItem('caspmail_client_id') || 'caspermail-web'
-    sessionStorage.clear()
+    const idToken = window.memoryStorage.getItem('caspmail_id_token')
+    const clientId = window.memoryStorage.getItem('caspmail_client_id') || 'caspermail-web'
+    window.memoryStorage.clear()
     const params = new URLSearchParams({ client_id: clientId, post_logout_redirect_uri: window.location.origin + '/console/login' })
     if (idToken && idToken !== 'null' && idToken !== 'undefined') params.set('id_token_hint', idToken)
     const ISSUER = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
@@ -203,7 +203,7 @@ export default function MailDashboard() {
                       return;
                     }
                     const ids = payload.split(',');
-                    const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+                    const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token');
                     if (!token) throw new Error("Token mancante");
                     
                     if (item.id === 'trash') {
@@ -259,7 +259,7 @@ export default function MailDashboard() {
                 if (name) {
                   fetch('/api/e2ee/folders', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))}` },
                     body: JSON.stringify({ name })
                   }).then(r => r.json()).then(d => {
                     if (d.id) setFolders([...folders, d]);
@@ -280,7 +280,7 @@ export default function MailDashboard() {
                   const payload = e.dataTransfer.getData('text/plain');
                   if (!payload) return;
                   const ids = payload.split(',');
-                  const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+                  const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token');
                   
                   fetch('/api/e2ee/messages/bulk/flags', {
                     method: 'PATCH',
@@ -298,7 +298,7 @@ export default function MailDashboard() {
                   if (confirm('Vuoi eliminare la cartella?')) {
                     fetch(`/api/e2ee/folders/${f.id}`, {
                       method: 'DELETE',
-                      headers: { Authorization: `Bearer ${(sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))}` }
+                      headers: { Authorization: `Bearer ${(window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))}` }
                     }).then(() => {
                       setFolders(folders.filter(x => x.id !== f.id));
                       if (active === f.id) setActive('inbox');

@@ -147,7 +147,7 @@ export default function SOCOverview() {
   const fetchData = useCallback(async () => {
     setError(null)
     try {
-      const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch('/api/v4/soc/overview', {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -164,7 +164,7 @@ export default function SOCOverview() {
 
   const loadLayout = useCallback(async () => {
     try {
-      const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch('/api/v4/soc/layout', {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -182,7 +182,7 @@ export default function SOCOverview() {
   const saveLayout = async () => {
     setIsEditable(false);
     try {
-      const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token')
       await fetch('/api/v4/soc/layout', {
         method: 'PUT',
         headers: { 
@@ -280,7 +280,7 @@ export default function SOCOverview() {
 
   const generateReport = async () => {
     try {
-      const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch('/api/v4/soc/report/test', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },

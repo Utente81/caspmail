@@ -44,6 +44,9 @@ spec:
             add:
             - IPC_LOCK
         volumeMounts:
+        - mountPath: /vault/tls
+          name: vault-tls
+          readOnly: true
         - mountPath: /vault/file
           name: vault-data
       nodeSelector:
@@ -54,6 +57,9 @@ spec:
         operator: Equal
         value: 'true'
       volumes:
+      - name: vault-tls
+        secret:
+          secretName: vault-tls
       - name: vault-data
         persistentVolumeClaim:
           claimName: transit-vault-data

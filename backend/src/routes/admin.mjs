@@ -368,7 +368,9 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/users', adminGuard, async (req, reply) => {
-    const { tenant_id, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
+    const userTenant = await getTenantId(req);
+    const { tenant_id = userTenant, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
+    if (tenant_id != userTenant && !req.user?.realm_access?.roles?.includes('casper_admin')) return reply.status(403).send({error: 'Tenant mismatch'});
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
     }
@@ -654,7 +656,9 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/domains', adminGuard, async (req, reply) => {
-    const { tenant_id, domain, is_primary = false } = req.body || {};
+    const userTenant = await getTenantId(req);
+    const { tenant_id = userTenant, domain, is_primary = false } = req.body || {};
+    if (tenant_id != userTenant && !req.user?.realm_access?.roles?.includes('casper_admin')) return reply.status(403).send({error: 'Tenant mismatch'});
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }

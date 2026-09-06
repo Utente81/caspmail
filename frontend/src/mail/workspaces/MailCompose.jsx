@@ -3,7 +3,7 @@ import { Send, Lock, AlertCircle, CheckCircle, Paperclip, X, Save } from 'lucide
 import { encryptMessage, encryptAttachment, importPublicKeyPem } from '../crypto.js'
 
 function apiFetch(path, opts = {}) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
@@ -223,7 +223,7 @@ export default function MailCompose({ keyPair, initialDraft, composeData, onDisc
       let prekey = null;
       try {
         const pkRes = await fetch(`/api/e2ee/prekeys/fetch/${encodeURIComponent(to)}`, {
-           headers: { Authorization: `Bearer ${sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token')}` }
+           headers: { Authorization: `Bearer ${window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token')}` }
         });
         if (pkRes.ok) {
            prekey = await pkRes.json();

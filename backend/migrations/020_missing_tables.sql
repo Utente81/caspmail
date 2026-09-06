@@ -25,11 +25,11 @@ CREATE TABLE IF NOT EXISTS policy_acknowledgments (
 
 CREATE TABLE IF NOT EXISTS tenant_mobile_policies (
     tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
-    require_pin BOOLEAN DEFAULT false,
+    require_biometrics BOOLEAN DEFAULT false,
     require_encryption BOOLEAN DEFAULT false,
     wipe_on_multiple_failures BOOLEAN DEFAULT false,
     block_jailbroken BOOLEAN DEFAULT false,
-    disable_screenshots BOOLEAN DEFAULT false,
+    prevent_screenshots BOOLEAN DEFAULT false,
     max_offline_days INTEGER DEFAULT 30,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS phishing_targets (
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
     message_id UUID,
     status VARCHAR(50) DEFAULT 'pending',
+    sent_at TIMESTAMP WITH TIME ZONE,
     opened_at TIMESTAMP WITH TIME ZONE,
     clicked_at TIMESTAMP WITH TIME ZONE,
     reported_at TIMESTAMP WITH TIME ZONE,
@@ -153,3 +154,5 @@ CREATE TABLE IF NOT EXISTS assets (
     last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE soc_cases ADD COLUMN IF NOT EXISTS description TEXT;

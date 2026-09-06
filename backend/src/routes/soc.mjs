@@ -2,11 +2,12 @@ import dns from 'dns';
 import { promisify } from 'util';
 import pool from '../db/pool.mjs';
 import { encryptData, decryptData } from '../services/vault.mjs';
-import { requireRole } from '../auth/verify.mjs';
+import { requireAuth, requireRole } from '../auth/verify.mjs';
 import { sendMail } from '../mailer.mjs';
 const SOC_ROLES = ['soc_analyst', 'soc_manager', 'soc_admin', 'admin', 'casper_admin'];
 export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
+  const authGuard = { preHandler: requireAuth };
 
 function zeroTrustGuardHook(req, reply, done) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.socket.remoteAddress || '';
@@ -1077,7 +1078,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   });
 
   // Report phishing from Mail client
-  app.post('/simulations/report/:message_id', async (req, reply) => {
+  app.post('/simulations/report/:message_id', authGuard, async (req, reply) => {
     const { message_id } = req.params;
 
     // 1. Check if it is a phishing drill
@@ -1129,6 +1130,8 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   });
 
   app.post('/vulnerabilities/scan', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     // Generate some fake vulnerabilities (SBOM Simulation)
     const { randomUUID } = await import('crypto');
     const fakeVulns = [
@@ -1138,9 +1141,9 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     ];
     for (const v of fakeVulns) {
       await pool.query(`
-        INSERT INTO vulnerabilities (id, cve_id, title, severity, cvss_score, component)
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING
-      `, [randomUUID(), v.cve, v.title, v.sev, v.cvss, v.comp]);
+        INSERT INTO vulnerabilities (id, tenant_id, cve_id, title, severity, cvss_score, component)
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING
+      `, [randomUUID(), tenantId, v.cve, v.title, v.sev, v.cvss, v.comp]);
     }
     reply.send({ message: 'Scansione SBOM completata con successo.' });
   });

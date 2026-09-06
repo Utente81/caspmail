@@ -192,28 +192,58 @@ export default async function adminRoutes(app) {
   // ─── Summary ──────────────────────────────────────────────────────────────
 
   app.get('/summary', adminGuard, async (req, reply) => {
-    const { rows } = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
-        (SELECT COUNT(*) FROM users WHERE COALESCE(status, 'active') <> 'deleted') AS total_users,
-        (SELECT COUNT(*) FROM domains WHERE verified = TRUE)          AS verified_domains,
-        (SELECT COUNT(*) FROM soc_alerts WHERE status = 'open')       AS open_alerts,
-        (SELECT COUNT(*) FROM soc_cases  WHERE status = 'open')       AS open_cases
-    `);
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    const isGlobal = req.user.role === 'casper_admin';
+    const tenantId = await getTenantId(req);
+    
+    if (isGlobal) {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
+          (SELECT COUNT(*) FROM users WHERE COALESCE(status, 'active') <> 'deleted') AS total_users,
+          (SELECT COUNT(*) FROM domains WHERE verified = TRUE)          AS verified_domains,
+          (SELECT COUNT(*) FROM soc_alerts WHERE status = 'open')       AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE status = 'open')       AS open_cases
+      `);
+      reply.send(rows[0]);
+    } else {
+      const { rows } = await pool.query(`
+        SELECT
+          1 AS active_tenants,
+          (SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND COALESCE(status, 'active') <> 'deleted') AS total_users,
+          (SELECT COUNT(*) FROM domains WHERE tenant_id = $1 AND verified = TRUE)          AS verified_domains,
+          (SELECT COUNT(*) FROM soc_alerts WHERE tenant_id = $1 AND status = 'open')       AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE tenant_id = $1 AND status = 'open')       AS open_cases
+      `, [tenantId]);
+      reply.send(rows[0]);
+    }
   });
 
-  // ─── Metrics & Retention ──────────────────────────────────────────────────
+  
 
   app.get('/metrics', adminGuard, async (req, reply) => {
-    const { rows } = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM e2ee_messages) AS total_messages,
-        (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages) AS storage_used_bytes,
-        (SELECT COUNT(*) FROM e2ee_keys) AS users_with_keys
-    `);
-    reply.send({ data: rows[0] });
+    const isGlobal = req.user.role === 'casper_admin';
+    const tenantId = await getTenantId(req);
+
+    if (isGlobal) {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM e2ee_messages) AS total_messages,
+          (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages) AS storage_used_bytes,
+          (SELECT COUNT(*) FROM e2ee_keys) AS users_with_keys
+      `);
+      reply.send({ data: rows[0] });
+    } else {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM e2ee_messages WHERE tenant_id = $1) AS total_messages,
+          (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages WHERE tenant_id = $1) AS storage_used_bytes,
+          (SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND id IN (SELECT user_id FROM e2ee_keys)) AS users_with_keys
+      `, [tenantId]);
+      reply.send({ data: rows[0] });
+    }
   });
+
+  
 
   app.post('/retention/purge', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);

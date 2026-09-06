@@ -34,7 +34,7 @@ jobs:
           # If ESLint is not installed globally or in package.json, this will fail gracefully.
           # We run it if it exists.
           if grep -q eslint package.json; then
-            npm run lint || echo "ESLint failed, please review."
+            npm run lint
           else
             npx eslint src/ || echo "No eslint config found, proceeding."
           fi

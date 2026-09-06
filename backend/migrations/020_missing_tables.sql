@@ -87,3 +87,21 @@ CREATE TABLE IF NOT EXISTS vulnerabilities (
 ALTER TABLE soc_cases ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE e2ee_messages ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE e2ee_messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+
+
+-- Fix audit_log inconsistency (code expects audit_log, migration created audit_logs)
+DROP TABLE IF EXISTS audit_logs CASCADE;
+CREATE TABLE IF NOT EXISTS audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(50) REFERENCES tenants(id) ON DELETE CASCADE,
+    actor VARCHAR(255),
+    action VARCHAR(255) NOT NULL,
+    resource VARCHAR(255),
+    details JSONB,
+    ip VARCHAR(45),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_tenant ON audit_log(tenant_id);
+
+-- Also add created_by to soc_blocked_ips if missing, to prevent NOT NULL constraints in inserts if not provided
+ALTER TABLE soc_blocked_ips ALTER COLUMN created_by DROP NOT NULL;

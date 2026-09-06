@@ -26,7 +26,7 @@ export async function processSoarPlaybooks(tenantId, triggerType, eventData) {
           const ip = eventData.source_ip;
           if (ip) {
             await pool.query(
-              `INSERT INTO soc_blocked_ips (tenant_id, ip_address, reason, expires_at)
+              `INSERT INTO soc_blocked_ips (tenant_id, ip, reason, expires_at)
                VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours') ON CONFLICT DO NOTHING`,
               [tenantId, ip, `Automated block by SOAR Playbook: ${playbook.name}`]
             );

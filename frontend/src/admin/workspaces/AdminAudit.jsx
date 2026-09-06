@@ -62,13 +62,26 @@ export default function AdminAudit() {
       <div className="adm-workspace-header">
         <h2 className="adm-workspace-title">Audit Log</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="adm-btn adm-btn-primary" onClick={() => {
-            const token = sessionStorage.getItem('caspmail_access_token');
-            const url = `/api/admin/audit/export?token=${token}`;
-            window.open(url, '_blank');
+          <button className="adm-btn adm-btn-primary" onClick={async () => {
+            const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+            try {
+              const res = await fetch(`/api/admin/audit/export`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (!res.ok) throw new Error('Export failed');
+              const blob = await res.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'audit_export.csv';
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.URL.revokeObjectURL(url);
+            } catch (err) {
+              console.error(err);
+            }
           }}>
-            Export CSV
-          </button>
           <button className="adm-btn adm-btn-ghost" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'adm-spin' : ''} /> Refresh
           </button>

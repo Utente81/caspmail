@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -29,7 +30,7 @@ async function fetchDynamicPassword() {
     const data = await res.json();
     cachedPassword = data.data.password;
     // Cache for 5 minutes (Vault rotates every 15m)
-    passwordExpiresAt = Date.now() + (1 * 1000); 
+    passwordExpiresAt = Date.now() + (5 * 60 * 1000); 
     
     console.log('[pg pool] Successfully fetched dynamic password from Vault');
     return cachedPassword;
@@ -53,7 +54,10 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
-  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false /* nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification */ } : false,
+  ssl: process.env.DATABASE_SSL === 'true' ? {
+    rejectUnauthorized: true,
+    ...(process.env.DATABASE_CA_FILE ? { ca: fs.readFileSync(process.env.DATABASE_CA_FILE, 'utf8') } : {}),
+  } : false,
 });
 
 pool.on('error', (err) => {

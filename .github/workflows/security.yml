@@ -20,7 +20,7 @@ jobs:
 
       - name: Run Semgrep
         run: semgrep ci --config=auto
-        continue-on-error: true
+        
 
   secrets:
     name: Gitleaks Secret Detection
@@ -36,7 +36,7 @@ jobs:
         uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true # Usually we want to block, but for a legacy repo it might need baselining
+         # Usually we want to block, but for a legacy repo it might need baselining
 
   npm-audit:
     name: NPM Audit
@@ -49,8 +49,8 @@ jobs:
 
       - name: Audit Backend
         working-directory: ./backend
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
 
       - name: Audit Frontend
         working-directory: ./frontend
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high

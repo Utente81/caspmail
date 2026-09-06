@@ -101,7 +101,7 @@ spec:
           /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1
           @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1
           && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/
-        image: ghcr.io/utente81/caspmail-backend:80ff5dc3ad65afd024387387120022c95c2f59a3
+        image: ghcr.io/utente81/caspmail-backend:dc4f56ae672d306a09ad6a72c468d05afbac8c9f
         imagePullPolicy: IfNotPresent
         name: init-telemetry
         volumeMounts:

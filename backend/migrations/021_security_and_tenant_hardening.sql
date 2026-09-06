@@ -1,6 +1,6 @@
 -- Incremental hardening for databases where 020_missing_tables.sql is already recorded.
 -- This migration is deliberately additive and does not drop/recreate production data.
-BEGIN;
+-- The migration runner supplies the transaction wrapper.
 ALTER TABLE tenant_mobile_policies
   ADD COLUMN IF NOT EXISTS require_biometrics BOOLEAN DEFAULT false;
 ALTER TABLE tenant_mobile_policies
@@ -42,4 +42,3 @@ CREATE INDEX IF NOT EXISTS idx_vulnerabilities_tenant
   ON vulnerabilities(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_phishing_targets_message_tenant
   ON phishing_targets(message_id, tenant_id);
-COMMIT;

@@ -22,7 +22,7 @@ async function fetchDynamicPassword() {
     const res = await fetch(`${VAULT_ADDR}/v1/database/static-creds/backend-role`, {
       headers: { 'X-Vault-Token': VAULT_TOKEN }
     });
-    
+
     if (!res.ok) {
       throw new Error(`Vault returned ${res.status}: ${await res.text()}`);
     }
@@ -30,8 +30,8 @@ async function fetchDynamicPassword() {
     const data = await res.json();
     cachedPassword = data.data.password;
     // Cache for 5 minutes (Vault rotates every 15m)
-    passwordExpiresAt = Date.now() + (5 * 60 * 1000); 
-    
+    passwordExpiresAt = Date.now() + (5 * 60 * 1000);
+
     console.log('[pg pool] Successfully fetched dynamic password from Vault');
     return cachedPassword;
   } catch (error) {

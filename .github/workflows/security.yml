@@ -20,7 +20,7 @@ jobs:
 
       - name: Run Semgrep
         run: semgrep ci --config=auto
-        
+
 
   secrets:
     name: Gitleaks Secret Detection

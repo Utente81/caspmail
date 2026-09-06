@@ -36,10 +36,16 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   };
   async function getTenantId(req) {
     const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
-    if (isGlobalAdmin && req.query.tenant_id) {
-      return req.query.tenant_id;
-    }
-    return req.user?.tenant_id || req.user?.tenant || null;
+    if (isGlobalAdmin && req.query.tenant_id) return req.query.tenant_id;
+    const claimTenantId = req.user?.tenant_id || req.user?.tenant || null;
+    if (claimTenantId) return claimTenantId;
+    const email = req.user?.email || req.user?.preferred_username;
+    if (!email) return null;
+    const { rows } = await pool.query(
+      'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
+      [email]
+    );
+    return rows[0]?.tenant_id || null;
   }
   // ─── Overview ─────────────────────────────────────────────────────────────
   app.get('/overview', socGuard, async (req, reply) => {
@@ -941,9 +947,10 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         const msgId = resMsg.rows[0].id;
 
         await client.query(
-          `INSERT INTO phishing_targets (id, campaign_id, user_email, message_id)
-           VALUES ($1, $2, $3, $4)`,
-          [target.id, campaignId, target.user_email, msgId]
+          `INSERT INTO phishing_targets
+             (id, campaign_id, user_email, tenant_id, message_id, sent_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [target.id, campaignId, target.user_email, tenantId, msgId]
         );
       }
 
@@ -1080,52 +1087,82 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   // Report phishing from Mail client
   app.post('/simulations/report/:message_id', authGuard, async (req, reply) => {
     const { message_id } = req.params;
-
-    // 1. Check if it is a phishing drill
+    const requesterEmail = req.user?.email || req.user?.preferred_username;
+    const requesterTenantId = await getTenantId(req);
+    if (!requesterEmail || !requesterTenantId) {
+      return reply.status(403).send({ error: 'No user or tenant association' });
+    }
+    // A report is allowed only for a message delivered to the authenticated
+    // user in the authenticated tenant.
     const { rows: targets } = await pool.query(
-      `SELECT * FROM phishing_targets WHERE message_id = $1`,
-      [message_id]
+      `SELECT t.*
+       FROM phishing_targets t
+       JOIN e2ee_messages m ON m.id = t.message_id
+       WHERE t.message_id = $1
+         AND m.tenant_id = $2
+         AND m.to_email = $3`,
+      [message_id, requesterTenantId, requesterEmail]
     );
-
     if (targets.length > 0) {
-      // It was a drill!
       await pool.query(
-        `UPDATE phishing_targets SET reported_at = NOW() WHERE message_id = $1 AND reported_at IS NULL`,
-        [message_id]
+        `UPDATE phishing_targets
+         SET reported_at = NOW()
+         WHERE message_id = $1
+           AND EXISTS (
+             SELECT 1 FROM e2ee_messages m
+             WHERE m.id = phishing_targets.message_id
+               AND m.tenant_id = $2
+               AND m.to_email = $3
+           )
+           AND reported_at IS NULL`,
+        [message_id, requesterTenantId, requesterEmail]
       );
-      // Soft-delete the message for the user so it disappears from their inbox
       await pool.query(
-        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
-        [message_id]
+        `UPDATE e2ee_messages
+         SET recipient_deleted_at = NOW()
+         WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+        [message_id, requesterTenantId, requesterEmail]
       );
       return reply.send({ is_phishing_drill: true, message: 'Congratulations, you successfully spotted a simulated phishing attack!' });
-    } else {
-      // Real phishing attempt reported by user -> Escalate to SOC
-      const { rows: msgs } = await pool.query(
-        `SELECT tenant_id, from_email, to_email FROM e2ee_messages WHERE id = $1`,
-        [message_id]
-      );
-      if (msgs.length > 0) {
-        const msg = msgs[0];
-        await pool.query(
-          `INSERT INTO soc_cases (tenant_id, title, description, severity, status, assigned_to)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [msg.tenant_id, `User Reported Phishing`, `User ${msg.to_email} reported an email from ${msg.from_email} (Msg ID: ${message_id})`, 'high', 'open', 'SOC Team']
-        );
-      }
-      // Soft-delete for safety
-      await pool.query(
-        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
-        [message_id]
-      );
-      return reply.send({ is_phishing_drill: false, message: 'Email reported successfully to the SOC.' });
     }
+    const { rows: msgs } = await pool.query(
+      `SELECT tenant_id, from_email, to_email
+       FROM e2ee_messages
+       WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+      [message_id, requesterTenantId, requesterEmail]
+    );
+    if (msgs.length > 0) {
+      const msg = msgs[0];
+      await pool.query(
+        `INSERT INTO soc_cases (tenant_id, title, description, severity, status, assigned_to)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [msg.tenant_id, 'User Reported Phishing',
+          `User ${msg.to_email} reported an email from ${msg.from_email} (Msg ID: ${message_id})`,
+          'high', 'open', 'SOC Team']
+      );
+      await pool.query(
+        `UPDATE e2ee_messages
+         SET recipient_deleted_at = NOW()
+         WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+        [message_id, requesterTenantId, requesterEmail]
+      );
+    }
+    return reply.send({ is_phishing_drill: false, message: 'Email reported successfully to the SOC.' });
   });
 
 
   // ─── GRC: Vulnerabilities ─────────────────────────────────────────────────
   app.get('/vulnerabilities', socGuard, async (req, reply) => {
-    const { rows } = await pool.query('SELECT * FROM vulnerabilities ORDER BY created_at DESC');
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && !tenantId) {
+      return reply.status(403).send({ error: 'No tenant association' });
+    }
+    const query = isGlobalAdmin && !req.query.tenant_id
+      ? 'SELECT * FROM vulnerabilities ORDER BY created_at DESC'
+      : 'SELECT * FROM vulnerabilities WHERE tenant_id = $1 ORDER BY created_at DESC';
+    const params = isGlobalAdmin && !req.query.tenant_id ? [] : [tenantId];
+    const { rows } = await pool.query(query, params);
     reply.send({ data: rows });
   });
 
@@ -1149,10 +1186,20 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   });
 
   app.patch('/vulnerabilities/:id/status', socGuard, async (req, reply) => {
-    const { status } = req.body;
-    const { rows } = await pool.query(`
-      UPDATE vulnerabilities SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *
-    `, [status, req.params.id]);
+    const { status } = req.body || {};
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && !tenantId) {
+      return reply.status(403).send({ error: 'No tenant association' });
+    }
+    const globalQuery = isGlobalAdmin && !req.query.tenant_id;
+    const query = globalQuery
+      ? `UPDATE vulnerabilities SET status = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`
+      : `UPDATE vulnerabilities SET status = $1, updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3 RETURNING *`;
+    const params = globalQuery ? [status, req.params.id] : [status, req.params.id, tenantId];
+    const { rows } = await pool.query(query, params);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
     reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });

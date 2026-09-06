@@ -192,9 +192,9 @@ export default async function adminRoutes(app) {
   // ─── Summary ──────────────────────────────────────────────────────────────
 
   app.get('/summary', adminGuard, async (req, reply) => {
-    const isGlobal = req.user.role === 'casper_admin';
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
     const tenantId = await getTenantId(req);
-    
+
     if (isGlobal) {
       const { rows } = await pool.query(`
         SELECT
@@ -218,10 +218,10 @@ export default async function adminRoutes(app) {
     }
   });
 
-  
+
 
   app.get('/metrics', adminGuard, async (req, reply) => {
-    const isGlobal = req.user.role === 'casper_admin';
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
     const tenantId = await getTenantId(req);
 
     if (isGlobal) {
@@ -243,7 +243,7 @@ export default async function adminRoutes(app) {
     }
   });
 
-  
+
 
   app.post('/retention/purge', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);

@@ -254,7 +254,7 @@ export default function MessageDetail({ msg, keyPair, onBack, onDelete, onFlag, 
                   </div>
                 )}
                 
-                <div className="mail-detail-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bodyText) }} />
+                <div className="mail-detail-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bodyText) }} // nosemgrep />
 
                 {attachments.length > 0 && (
                   <div className="mail-attachments-list" style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px' }}>

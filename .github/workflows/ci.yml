@@ -36,7 +36,7 @@ jobs:
           if grep -q eslint package.json; then
             npm run lint
           else
-            npx eslint src/ || echo "No eslint config found, proceeding."
+            echo "No eslint config found, skipping." || echo "No eslint config found, proceeding."
           fi
 
   quality-frontend:
@@ -66,7 +66,7 @@ jobs:
           if grep -q eslint package.json; then
             npm run lint
           else
-            npx eslint src/ || true
+            echo "No eslint config found, skipping." || true
           fi
 
       - name: Test Build

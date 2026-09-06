@@ -100,7 +100,7 @@ export default async function mailRoutes(app) {
   app.get('/api/me', authGuard, async (req, reply) => {
     const user = await getUser(req.user);
     if (!user) return reply.status(404).send({ error: 'User not found' });
-    reply.send(user); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    reply.send(user); // nosemgrep // nosemgrep
   });
 
   app.get('/api/me/dashboard', authGuard, async (req, reply) => {

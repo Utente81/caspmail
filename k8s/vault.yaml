@@ -19,7 +19,8 @@ data:
     : {\n    \"file\": {\n      \"path\": \"/vault/file\"\n    }\n  },\n  \"seal\"\
     : {\n    \"transit\": {\n      \"address\": \"https://transit-vault:8200\",\n\
     \      \"disable_renewal\": \"false\",\n      \"key_name\": \"autounseal\",\n\
-    \      \"mount_path\": \"transit\",\n      \"tls_skip_verify\": \"false\"\n  \
+    \      \"mount_path\": \"transit\",\n      \"tls_skip_verify\": \"false\",
+      \"tls_ca_cert\": \"/vault/transit-tls/ca.crt\"\n  \
     \  }\n  },\n  \"ui\": true,\n  \"disable_mlock\": true\n}"
 kind: ConfigMap
 metadata:
@@ -71,6 +72,9 @@ spec:
         - mountPath: /vault/tls
           name: tls
           readOnly: true
+        - mountPath: /vault/transit-tls
+          name: transit-tls
+          readOnly: true
       nodeSelector:
         tier: secure-data
       tolerations:
@@ -88,6 +92,9 @@ spec:
       - name: tls
         secret:
           secretName: vault-tls
+      - name: transit-tls
+        secret:
+          secretName: transit-vault-tls
 ---
 apiVersion: v1
 kind: Service

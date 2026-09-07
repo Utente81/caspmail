@@ -28,20 +28,6 @@ spec:
       labels:
         app: transit-vault
     spec:
-      initContainers:
-      - name: cert-gen
-        image: alpine/openssl:3.3.3
-        command:
-        - sh
-        - -c
-        - "set -e\nif [ ! -f /vault/tls/tls.crt ]; then\n  openssl req -x509 -newkey\
-          \ rsa:4096 \\\n    -keyout /vault/tls/tls.key \\\n    -out /vault/tls/tls.crt\
-          \ \\\n    -days 365 -nodes \\\n    -subj '/CN=transit-vault.caspermail-enterprise.svc.cluster.local'\
-          \ \\\n    -addext 'subjectAltName=DNS:transit-vault,DNS:transit-vault.caspermail-enterprise.svc,DNS:transit-vault.caspermail-enterprise.svc.cluster.local'\n\
-          \  chmod 600 /vault/tls/tls.key\n  chmod 644 /vault/tls/tls.crt\nfi\n"
-        volumeMounts:
-        - name: tls-certs
-          mountPath: /vault/tls
       containers:
       - name: vault
         args:
@@ -78,7 +64,8 @@ spec:
         persistentVolumeClaim:
           claimName: transit-vault-data
       - name: tls-certs
-        emptyDir: {}
+        secret:
+          secretName: transit-vault-tls
 ---
 apiVersion: v1
 kind: Service

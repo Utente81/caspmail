@@ -27,3 +27,25 @@ spec:
     name: selfsigned-issuer
     kind: Issuer
     group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: transit-vault-tls
+  namespace: caspermail-enterprise
+spec:
+  isCA: true
+  commonName: transit-vault.caspermail-enterprise.svc.cluster.local
+  dnsNames:
+  - transit-vault
+  - transit-vault.caspermail-enterprise.svc
+  - transit-vault.caspermail-enterprise.svc.cluster.local
+  secretName: transit-vault-tls
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io

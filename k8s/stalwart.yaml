@@ -54,7 +54,7 @@ spec:
             secretKeyRef:
               name: casper-stalwart-admin
               key: password
-        image: stalwartlabs/mail-server:v0.9.3
+        image: stalwartlabs/mail-server:v0.9.3@sha256:edfb1774e2809ba32fd084246b4988cbf3f1b8c76f05b2ae7042157ac69193eb
         name: stalwart
         ports:
         - containerPort: 25

@@ -74,7 +74,7 @@ spec:
           value: https://casper-vault.caspermail-enterprise.svc.cluster.local:8200
         - name: VAULT_CACERT
           value: /etc/caspermail/vault-tls/tls.crt
-        image: ghcr.io/utente81/caspmail-backend:5ef06b64ce01b22a78ad11d605f5362c0e836d8e
+        image: ghcr.io/utente81/caspmail-backend:10ddaf9cac0cf2c201838da8777bbc5587c4f2bd
         imagePullPolicy: IfNotPresent
         name: backend
         ports:
@@ -111,7 +111,7 @@ spec:
           /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1
           @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1
           && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/
-        image: ghcr.io/utente81/caspmail-backend:5ef06b64ce01b22a78ad11d605f5362c0e836d8e
+        image: ghcr.io/utente81/caspmail-backend:10ddaf9cac0cf2c201838da8777bbc5587c4f2bd
         imagePullPolicy: IfNotPresent
         name: init-telemetry
         volumeMounts:

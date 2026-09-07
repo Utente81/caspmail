@@ -172,9 +172,14 @@ async function deleteKeycloakUser(email) {
 }
 
 async function getTenantId(req) {
-  let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
-  if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
-    const email = req.user.email || req.user.preferred_username;
+  const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+  if (isGlobalAdmin && req.headers['x-tenant-id']) {
+    return req.headers['x-tenant-id'];
+  }
+  let tenantId = req.user?.tenant_id || req.user?.tenant || null;
+  if (!tenantId) {
+    const email = req.user?.email || req.user?.preferred_username;
+    if (!email) return null;
     const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);
     if (rows.length > 0) tenantId = rows[0].tenant_id;
   }
@@ -187,43 +192,75 @@ export default async function adminRoutes(app) {
   // ─── Summary ──────────────────────────────────────────────────────────────
 
   app.get('/summary', adminGuard, async (req, reply) => {
-    const { rows } = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
-        (SELECT COUNT(*) FROM users WHERE COALESCE(status, 'active') <> 'deleted') AS total_users,
-        (SELECT COUNT(*) FROM domains WHERE verified = TRUE)          AS verified_domains,
-        (SELECT COUNT(*) FROM soc_alerts WHERE status = 'open')       AS open_alerts,
-        (SELECT COUNT(*) FROM soc_cases  WHERE status = 'open')       AS open_cases
-    `);
-    reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+
+    if (isGlobal) {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM tenants WHERE status = 'active')        AS active_tenants,
+          (SELECT COUNT(*) FROM users WHERE COALESCE(status, 'active') <> 'deleted') AS total_users,
+          (SELECT COUNT(*) FROM domains WHERE verified = TRUE)          AS verified_domains,
+          (SELECT COUNT(*) FROM soc_alerts WHERE status = 'open')       AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE status = 'open')       AS open_cases
+      `);
+      reply.send(rows[0]);
+    } else {
+      const { rows } = await pool.query(`
+        SELECT
+          1 AS active_tenants,
+          (SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND COALESCE(status, 'active') <> 'deleted') AS total_users,
+          (SELECT COUNT(*) FROM domains WHERE tenant_id = $1 AND verified = TRUE)          AS verified_domains,
+          (SELECT COUNT(*) FROM soc_alerts WHERE tenant_id = $1 AND status = 'open')       AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE tenant_id = $1 AND status = 'open')       AS open_cases
+      `, [tenantId]);
+      reply.send(rows[0]);
+    }
   });
 
-  // ─── Metrics & Retention ──────────────────────────────────────────────────
+
 
   app.get('/metrics', adminGuard, async (req, reply) => {
-    const { rows } = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM e2ee_messages) AS total_messages,
-        (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages) AS storage_used_bytes,
-        (SELECT COUNT(*) FROM e2ee_keys) AS users_with_keys
-    `);
-    reply.send({ data: rows[0] });
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+
+    if (isGlobal) {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM e2ee_messages) AS total_messages,
+          (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages) AS storage_used_bytes,
+          (SELECT COUNT(*) FROM e2ee_keys) AS users_with_keys
+      `);
+      reply.send({ data: rows[0] });
+    } else {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM e2ee_messages WHERE tenant_id = $1) AS total_messages,
+          (SELECT COALESCE(SUM(LENGTH(body_encrypted)), 0) FROM e2ee_messages WHERE tenant_id = $1) AS storage_used_bytes,
+          (SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND id IN (SELECT user_id FROM e2ee_keys)) AS users_with_keys
+      `, [tenantId]);
+      reply.send({ data: rows[0] });
+    }
   });
 
+
+
   app.post('/retention/purge', adminGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
     const { rowCount } = await pool.query(`
       DELETE FROM e2ee_messages
       WHERE deleted_at IS NOT NULL
         AND deleted_at < NOW() - INTERVAL '30 days'
         AND legal_hold = FALSE
-    `);
+        AND tenant_id = $1
+    `, [tenantId]);
     reply.send({ purged_count: rowCount });
   });
 
   app.post('/simulate-attack', adminGuard, async (req, reply) => {
     let tenantId = await getTenantId(req);
     if (!tenantId) tenantId = 'system';
-    
+
     const { type, message } = req.body || {};
     const severity = 'critical';
     const source_ip = '10.0.0.99';
@@ -233,13 +270,13 @@ export default async function adminRoutes(app) {
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [tenantId, eventType, severity, source_ip, message || 'Manual simulated attack']
     );
-    
+
     await pool.query(
       `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
        VALUES ($1, $2, $3, $4, 'open')`,
       [tenantId, evRows[0].id, severity, message || 'Manual simulated attack']
     );
-    
+
     if (app.io) {
       app.io.emit('soc:new_alert', { title: message || 'Manual simulated attack', ip: source_ip });
     }
@@ -248,7 +285,7 @@ export default async function adminRoutes(app) {
     import('../services/soar.mjs').then(({ processSoarPlaybooks }) => {
       processSoarPlaybooks(tenantId, eventType, { source_ip, user_email: null, message });
     }).catch(console.error);
-    
+
     reply.send({ ok: true, message: 'Simulated attack injected into SIEM' });
   });
 
@@ -316,9 +353,9 @@ export default async function adminRoutes(app) {
     const { rows } = await pool.query(`
       INSERT INTO tenant_mobile_policies (tenant_id, require_biometrics, prevent_screenshots, updated_at)
       VALUES ($1, $2, $3, NOW())
-      ON CONFLICT (tenant_id) DO UPDATE 
-      SET require_biometrics = EXCLUDED.require_biometrics, 
-          prevent_screenshots = EXCLUDED.prevent_screenshots, 
+      ON CONFLICT (tenant_id) DO UPDATE
+      SET require_biometrics = EXCLUDED.require_biometrics,
+          prevent_screenshots = EXCLUDED.prevent_screenshots,
           updated_at = NOW()
       RETURNING *
     `, [id, require_biometrics, prevent_screenshots]);
@@ -328,7 +365,13 @@ export default async function adminRoutes(app) {
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
-    const tenantId  = req.query.tenant_id;
+
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    let tenantId = req.query.tenant_id;
+    if (!isGlobalAdmin) {
+      tenantId = req.user?.tenant_id;
+    }
+
 
     let query = 'SELECT * FROM users';
     const params = [];
@@ -355,7 +398,9 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/users', adminGuard, async (req, reply) => {
-    const { tenant_id, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
+    const userTenant = await getTenantId(req);
+    const { tenant_id = userTenant, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
+    if (tenant_id != userTenant && !req.user?.realm_access?.roles?.includes('casper_admin')) return reply.status(403).send({error: 'Tenant mismatch'});
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
     }
@@ -538,7 +583,7 @@ export default async function adminRoutes(app) {
       }
 
       await pool.query('DELETE FROM users WHERE id=$1', [id]);
-      
+
       await pool.query('DELETE FROM e2ee_keys WHERE tenant_id=$1 AND user_email=$2', [user.tenant_id, user.email]);
 
       await pool.query(
@@ -641,7 +686,9 @@ export default async function adminRoutes(app) {
   });
 
   app.post('/domains', adminGuard, async (req, reply) => {
-    const { tenant_id, domain, is_primary = false } = req.body || {};
+    const userTenant = await getTenantId(req);
+    const { tenant_id = userTenant, domain, is_primary = false } = req.body || {};
+    if (tenant_id != userTenant && !req.user?.realm_access?.roles?.includes('casper_admin')) return reply.status(403).send({error: 'Tenant mismatch'});
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }
@@ -682,7 +729,7 @@ export default async function adminRoutes(app) {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { process_name, data_categories, legal_basis, retention_period, data_subjects } = req.body;
-    
+
     const { rows } = await pool.query(`
       INSERT INTO ropa_records (id, tenant_id, process_name, data_categories, legal_basis, retention_period, data_subjects)
       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
@@ -709,7 +756,7 @@ export default async function adminRoutes(app) {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { user_email, request_type, details } = req.body;
-    
+
     const { rows } = await pool.query(`
       INSERT INTO dsr_requests (id, tenant_id, user_email, request_type, details)
       VALUES ($1, $2, $3, $4, $5) RETURNING *
@@ -728,7 +775,7 @@ export default async function adminRoutes(app) {
 
     // If status is completed and type is erasure, delete all messages!
     if (status === 'completed' && rows[0].request_type === 'erasure') {
-      await pool.query('DELETE FROM e2ee_messages WHERE (from_email = $1 OR to_email = $1) AND legal_hold = FALSE', [rows[0].user_email]);
+      await pool.query('DELETE FROM e2ee_messages WHERE (from_email = $1 OR to_email = $1) AND legal_hold = FALSE AND tenant_id = $2', [rows[0].user_email, tenantId]);
     }
 
     reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
@@ -760,8 +807,8 @@ export default async function adminRoutes(app) {
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { title, version, content, is_active } = req.body;
     const { rows } = await pool.query(`
-      UPDATE security_policies 
-      SET title = $1, version = $2, content = $3, is_active = $4 
+      UPDATE security_policies
+      SET title = $1, version = $2, content = $3, is_active = $4
       WHERE id = $5 AND tenant_id = $6 RETURNING *
     `, [title, version, content, is_active, req.params.id, tenantId]);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
@@ -794,9 +841,9 @@ export default async function adminRoutes(app) {
   app.get('/vendors', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rows } = await pool.query(`
-      SELECT v.*, 
+      SELECT v.*,
              d.status as dpa_status, d.signed_at as dpa_signed_at, d.expires_at as dpa_expires_at,
              a.status as assessment_status, a.score as assessment_score, a.completed_at as assessment_completed_at
       FROM vendors v
@@ -811,9 +858,9 @@ export default async function adminRoutes(app) {
   app.post('/vendors', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { name, contact_email, service_provided, risk_level } = req.body;
-    
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -821,12 +868,12 @@ export default async function adminRoutes(app) {
         INSERT INTO vendors (tenant_id, name, contact_email, service_provided, risk_level)
         VALUES ($1, $2, $3, $4, $5) RETURNING id
       `, [tenantId, name, contact_email, service_provided, risk_level || 'medium']);
-      
+
       const vendorId = vendorRows[0].id;
-      
+
       await client.query(`INSERT INTO vendor_dpas (vendor_id) VALUES ($1)`, [vendorId]);
       await client.query(`INSERT INTO vendor_assessments (vendor_id) VALUES ($1)`, [vendorId]);
-      
+
       await client.query('COMMIT');
       reply.status(201).send({ ok: true, id: vendorId });
     } catch (e) {
@@ -841,7 +888,7 @@ export default async function adminRoutes(app) {
   app.delete('/vendors/:id', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rowCount } = await pool.query('DELETE FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
     reply.send({ ok: true });
@@ -850,34 +897,34 @@ export default async function adminRoutes(app) {
   app.post('/vendors/:id/dpa/sign', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
-    
+
     await pool.query(`
-      UPDATE vendor_dpas 
-      SET status = 'valid', signed_at = NOW(), expires_at = NOW() + INTERVAL '1 year' 
+      UPDATE vendor_dpas
+      SET status = 'valid', signed_at = NOW(), expires_at = NOW() + INTERVAL '1 year'
       WHERE vendor_id = $1
     `, [req.params.id]);
-    
+
     reply.send({ ok: true });
   });
 
   app.post('/vendors/:id/assess', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { score } = req.body;
-    
+
     const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
-    
+
     await pool.query(`
-      UPDATE vendor_assessments 
-      SET status = 'completed', score = $2, completed_at = NOW() 
+      UPDATE vendor_assessments
+      SET status = 'completed', score = $2, completed_at = NOW()
       WHERE vendor_id = $1
     `, [req.params.id, score || 100]);
-    
+
     reply.send({ ok: true });
   });
 
@@ -988,9 +1035,12 @@ export default async function adminRoutes(app) {
 
   app.delete('/domains/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
-    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
+
+    const tenantId = await getTenantId(req);
+    const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+
     if (rows.length === 0) return reply.status(404).send({ error: 'Domain not found' });
-    await pool.query('DELETE FROM domains WHERE id = $1', [id]);
+    await pool.query('DELETE FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'delete', 'domain', $3, $4)`,
@@ -1014,7 +1064,7 @@ export default async function adminRoutes(app) {
     const isGlobalAdmin = userRoles.includes('casper_admin');
 
     if (!isGlobalAdmin) {
-      let tenantId = req.headers['x-tenant-id'] || req.user?.tenant;
+      let tenantId = req.user?.tenant_id || req.user?.tenant;
       if (!tenantId && (req.user?.email || req.user?.preferred_username)) {
         const email = req.user.email || req.user.preferred_username;
         const { rows } = await pool.query('SELECT tenant_id FROM users WHERE email = $1', [email]);

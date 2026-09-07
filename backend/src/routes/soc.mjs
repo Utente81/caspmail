@@ -1,23 +1,26 @@
+import dns from 'dns';
+import { promisify } from 'util';
 import pool from '../db/pool.mjs';
 import { encryptData, decryptData } from '../services/vault.mjs';
-import { requireRole } from '../auth/verify.mjs';
+import { requireAuth, requireRole } from '../auth/verify.mjs';
 import { sendMail } from '../mailer.mjs';
 const SOC_ROLES = ['soc_analyst', 'soc_manager', 'soc_admin', 'admin', 'casper_admin'];
 export default async function socRoutes(app) {
   const socGuard = { preHandler: requireRole(SOC_ROLES) };
+  const authGuard = { preHandler: requireAuth };
 
 function zeroTrustGuardHook(req, reply, done) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.socket.remoteAddress || '';
   const isVPN = /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) || ip === '127.0.0.1' || ip === '::1';
-  
+
   const now = new Date();
   const day = now.getUTCDay();
   const hour = now.getUTCHours() + 2;
   const isWorkingHours = (day >= 1 && day <= 5) && (hour >= 8 && hour < 18);
-  
+
   const acr = req.user?.acr;
   const hasMFA = (acr === '2' || acr === 'loa2' || (req.user?.amr && req.user.amr.includes('mfa')));
-  
+
   if (!isVPN && !isWorkingHours) {
     if (!hasMFA) {
       return reply.status(403).send({ error: 'Zero Trust Policy: Access denied. Please connect to VPN, operate during working hours, or authenticate with MFA.' });
@@ -28,25 +31,21 @@ function zeroTrustGuardHook(req, reply, done) {
 const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook] };
 
   const socStreamGuard = {
-    preHandler: async (req, reply) => {
-      if (!req.headers.authorization && req.query?.token) {
-        req.headers.authorization = `Bearer ${req.query.token}`;
-      }
-      return requireRole(SOC_ROLES)(req, reply);
+    preHandler: async (req, reply) => {      return requireRole(SOC_ROLES)(req, reply);
     },
   };
   async function getTenantId(req) {
-    const user = req.user;
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (isGlobalAdmin && req.query.tenant_id) return req.query.tenant_id;
+    const claimTenantId = req.user?.tenant_id || req.user?.tenant || null;
+    if (claimTenantId) return claimTenantId;
+    const email = req.user?.email || req.user?.preferred_username;
+    if (!email) return null;
     const { rows } = await pool.query(
       'SELECT tenant_id FROM users WHERE email = $1 LIMIT 1',
-      [user.email || user.preferred_username]
+      [email]
     );
-    if (rows[0]?.tenant_id) return rows[0].tenant_id;
-    const roles = user?.realm_access?.roles || user?.roles || [];
-    if (roles.some((role) => ['admin', 'casper_admin'].includes(role))) {
-      return req.query?.tenant_id || 'system';
-    }
-    return null;
+    return rows[0]?.tenant_id || null;
   }
   // ─── Overview ─────────────────────────────────────────────────────────────
   app.get('/overview', socGuard, async (req, reply) => {
@@ -55,44 +54,44 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const [metrics, alerts, cases] = await Promise.all([
       pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 )
            AND created_at > NOW() - INTERVAL '24 hours') AS events_24h,
-          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+          (SELECT COUNT(*) FROM soc_events WHERE (tenant_id = $1 )
            AND severity IN ('high','critical')
            AND created_at > NOW() - INTERVAL '24 hours') AS high_severity_24h,
-          (SELECT COUNT(*) FROM soc_alerts WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_alerts,
-          (SELECT COUNT(*) FROM soc_cases  WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND status='open') AS open_cases
+          (SELECT COUNT(*) FROM soc_alerts WHERE (tenant_id = $1 ) AND status='open') AS open_alerts,
+          (SELECT COUNT(*) FROM soc_cases  WHERE (tenant_id = $1 ) AND status='open') AS open_cases
       `, [tenantId]),
       pool.query(`
         SELECT a.id, a.severity, a.message, a.status, a.created_at,
                e.type AS event_type, e.source_ip
         FROM soc_alerts a
         LEFT JOIN soc_events e ON e.id = a.event_id
-        WHERE (a.tenant_id = $1 OR a.tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+        WHERE (a.tenant_id = $1 )
         ORDER BY a.created_at DESC LIMIT 10
       `, [tenantId]),
       pool.query(`
         SELECT id, title, severity, status, type, assigned_to, created_at
-        FROM soc_cases WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL)
+        FROM soc_cases WHERE (tenant_id = $1 )
         ORDER BY created_at DESC LIMIT 10
       `, [tenantId]),
     ]);
     const [eventsTrend, severityDist] = await Promise.all([
       pool.query(`
-        SELECT 
+        SELECT
           date_trunc('hour', created_at) AS time_bucket,
           COUNT(*) AS event_count
         FROM soc_events
-        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 ) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
         ORDER BY 1 ASC
       `, [tenantId]),
       pool.query(`
-        SELECT 
+        SELECT
           LOWER(severity) AS severity,
           COUNT(*) AS count
         FROM soc_events
-        WHERE (tenant_id = $1 OR tenant_id IN ('system','acme-corp') OR $1 IS NULL) AND created_at > NOW() - INTERVAL '24 hours'
+        WHERE (tenant_id = $1 ) AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY 1
       `, [tenantId]),
     ]);
@@ -253,7 +252,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     params.push(limit, offset);
     query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const { rows } = await pool.query(query, params);
-    
+
     for (let row of rows) {
       if (row.message) row.message = await decryptData(row.message);
       if (row.raw && typeof row.raw === 'string') {
@@ -349,11 +348,11 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
       WHERE tenant_id=$1 AND user_email=$2
       ORDER BY created_at DESC LIMIT 100
     `, [tenantId, req.params.email]);
-    
+
     for (let row of rows) {
       if (row.message) row.message = await decryptData(row.message);
     }
-    
+
     reply.send({ data: rows });
   });
   // ─── Threat Map data ───────────────────────────────────────────────────────
@@ -375,8 +374,8 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           AND created_at > NOW() - INTERVAL '24 hours'
         GROUP BY source_ip
         ORDER BY (
-          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END)*10 + 
-          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END)*5 + 
+          SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END)*10 +
+          SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END)*5 +
           COUNT(*)
         ) DESC
         LIMIT 30
@@ -685,18 +684,46 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     );
     reply.send({ data: rows });
   });
-  function isSafeUrl(urlStr) {
+  const lookup = promisify(dns.lookup);
+
+  function isPrivateIP(ip) {
+    if (ip === '::1' || ip === '0.0.0.0') return true;
+    if (ip.startsWith('127.')) return true;
+    if (ip.startsWith('10.')) return true;
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('169.254.')) return true;
+    if (ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) return true;
+    // Basic IPv6 private checks
+    if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd') || ip.toLowerCase().startsWith('fe80')) return true;
+    return false;
+  }
+
+  async function safeFetch(urlStr, options = {}) {
+    let parsed;
     try {
-      const parsed = new URL(urlStr);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-      const host = parsed.hostname;
-      if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === 'localhost' || host === '::1') {
-        return false;
-      }
-      return true;
+      parsed = new URL(urlStr);
     } catch {
-      return false;
+      throw new Error('Invalid URL');
     }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Invalid protocol');
+    }
+
+    const { address } = await lookup(parsed.hostname);
+    if (isPrivateIP(address)) {
+      throw new Error('Unsafe IP address resolved');
+    }
+
+    const originalHost = parsed.hostname;
+    parsed.hostname = address;
+
+    const headers = options.headers || {};
+    headers['Host'] = originalHost;
+
+    return await fetch(parsed.toString(), {
+      ...options,
+      headers
+    });
   }
   // Internal: execute a playbook action
   async function executeAction(server, pb, runId, tenantId, actor) {
@@ -707,18 +734,18 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         case 'block_ip': {
           const ipToBlock = pb.config?.ip_address;
           if (!ipToBlock) throw new Error('No ip_address in config');
-          
+
           // 1. Add to Postgres blocklist
           await pool.query(
             'INSERT INTO soc_blocked_ips (tenant_id, ip, reason, created_by) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
             [tenantId, ipToBlock, `Blocked by SOAR playbook: ${pb.name}`, actor || 'soar']
           );
-          
+
           // 2. Add to Memory Firewall (if we can reach it, but wait, server.blockIp isn't defined on Fastify instance. Let's just rely on DB sync or add a method)
           // Actually, let's just simulate the API call to FortiGate/PaloAlto
-          
+
           const firewallApiUrl = process.env.FIREWALL_API_URL || 'https://mock-fortigate.local/api/v2/cmdb/firewall/address';
-          
+
           try {
             // Dry-run mode HTTP call
             const payload = {
@@ -734,7 +761,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           }
 
           result = { blocked_ip: ipToBlock, firewall: 'FortiGate/PaloAlto API Synced' };
-          
+
           if (server.io) {
             server.io.emit('soar:action_executed', { action: 'block_ip', ip: ipToBlock, playbook: pb.name });
           }
@@ -753,8 +780,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         case 'webhook': {
           const url = pb.config?.url;
           if (!url) throw new Error('No webhook URL configured');
-          if (!isSafeUrl(url)) throw new Error('Unsafe webhook URL (SSRF protection)');
-          const res = await fetch(url, {
+          const res = await safeFetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(pb.config?.headers || {}) },
             body: JSON.stringify({ playbook: pb.name, trigger: pb.trigger_type, timestamp: new Date().toISOString() }),
@@ -793,14 +819,13 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         case 'slack_notify': {
           const webhookUrl = pb.config?.webhook_url;
           if (!webhookUrl) throw new Error('No webhook_url in config');
-          if (!isSafeUrl(webhookUrl)) throw new Error('Unsafe webhook URL (SSRF protection)');
           const payload = {
             text: pb.config?.message
               || `*[CaspMail SOC]* Playbook *${pb.name}* triggered by \`${pb.trigger_type}\``,
             username: 'CaspMail SOC',
             icon_emoji: ':shield:',
           };
-          const res = await fetch(webhookUrl, {
+          const res = await safeFetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -875,9 +900,9 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   app.get('/simulations/campaigns', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    
+
     const { rows } = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.*,
         COUNT(t.id) as total_targets,
         COUNT(t.opened_at) as opened_count,
         COUNT(t.clicked_at) as clicked_count,
@@ -896,7 +921,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { name, sender_email, targets } = req.body;
-    
+
     if (!name || !sender_email || !Array.isArray(targets) || targets.length === 0) {
       return reply.status(400).send({ error: 'Invalid campaign data' });
     }
@@ -904,14 +929,14 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       const resCamp = await client.query(
         `INSERT INTO phishing_campaigns (tenant_id, name, sender_email, status)
          VALUES ($1, $2, $3, 'running') RETURNING id`,
         [tenantId, name, sender_email]
       );
       const campaignId = resCamp.rows[0].id;
-      
+
       for (const target of targets) {
         // Insert message into e2ee_messages spoofing the sender
         const resMsg = await client.query(
@@ -920,14 +945,15 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           [tenantId, sender_email, target.user_email, target.subject_encrypted, target.body_encrypted, target.nonce]
         );
         const msgId = resMsg.rows[0].id;
-        
+
         await client.query(
-          `INSERT INTO phishing_targets (id, campaign_id, user_email, message_id)
-           VALUES ($1, $2, $3, $4)`,
-          [target.id, campaignId, target.user_email, msgId]
+          `INSERT INTO phishing_targets
+             (id, campaign_id, user_email, tenant_id, message_id, sent_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [target.id, campaignId, target.user_email, tenantId, msgId]
         );
       }
-      
+
       await client.query('COMMIT');
       reply.send({ id: campaignId, status: 'started' });
     } catch (e) {
@@ -947,30 +973,30 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Get all message_ids from targets associated with this campaign
       const { rows: targets } = await client.query(
         `SELECT message_id FROM phishing_targets WHERE campaign_id = $1`,
         [id]
       );
-      
+
       // Delete the messages from e2ee_messages (so they disappear from inboxes)
       for (const t of targets) {
         if (t.message_id) {
           await client.query(`DELETE FROM e2ee_messages WHERE id = $1`, [t.message_id]);
         }
       }
-      
+
       // Delete the campaign (targets are deleted via ON DELETE CASCADE)
       const res = await client.query(
         `DELETE FROM phishing_campaigns WHERE id = $1 AND tenant_id = $2 RETURNING id`,
         [id, tenantId]
       );
-      
+
       if (res.rowCount === 0) {
         throw new Error('Campaign not found or access denied');
       }
-      
+
       await client.query('COMMIT');
       reply.send({ ok: true, deleted: id });
     } catch (e) {
@@ -1000,30 +1026,30 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     }
 
     const { rows } = await pool.query(
-      `SELECT user_email, status, sent_at, opened_at, clicked_at, reported_at 
-       FROM phishing_targets 
-       WHERE campaign_id = $1 
+      `SELECT user_email, status, sent_at, opened_at, clicked_at, reported_at
+       FROM phishing_targets
+       WHERE campaign_id = $1
        ORDER BY user_email ASC`,
       [id]
     );
-    
+
     reply.send({ data: rows });
   });
 
   app.get('/users', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
-    
+
     let query = 'SELECT id, email, name FROM users';
     let params = [];
-    
+
     // If tenant is 'system' (superadmin), they see everyone. Otherwise filter by tenant.
     if (tenantId !== 'system') {
       query += ' WHERE tenant_id = $1';
       params.push(tenantId);
     }
     query += ' ORDER BY email ASC';
-    
+
     const { rows } = await pool.query(query, params);
     reply.send({ data: rows });
   });
@@ -1037,7 +1063,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         [target_id]
       );
     } catch (e) { req.log.error(e); }
-    
+
     // 1x1 transparent GIF
     const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
     reply.type('image/gif').send(gif);
@@ -1052,65 +1078,97 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
         [target_id]
       );
     } catch (e) { req.log.error(e); }
-    
+
     // Redirect to frontend phished page (handled by frontend routing)
     // Normally would redirect to a real hosted page, but we'll redirect to the frontend domain
     reply.redirect('/phished');
   });
 
   // Report phishing from Mail client
-  app.post('/simulations/report/:message_id', async (req, reply) => {
+  app.post('/simulations/report/:message_id', authGuard, async (req, reply) => {
     const { message_id } = req.params;
-    
-    // 1. Check if it is a phishing drill
+    const requesterEmail = req.user?.email || req.user?.preferred_username;
+    const requesterTenantId = await getTenantId(req);
+    if (!requesterEmail || !requesterTenantId) {
+      return reply.status(403).send({ error: 'No user or tenant association' });
+    }
+    // A report is allowed only for a message delivered to the authenticated
+    // user in the authenticated tenant.
     const { rows: targets } = await pool.query(
-      `SELECT * FROM phishing_targets WHERE message_id = $1`,
-      [message_id]
+      `SELECT t.*
+       FROM phishing_targets t
+       JOIN e2ee_messages m ON m.id = t.message_id
+       WHERE t.message_id = $1
+         AND m.tenant_id = $2
+         AND m.to_email = $3`,
+      [message_id, requesterTenantId, requesterEmail]
     );
-    
     if (targets.length > 0) {
-      // It was a drill!
       await pool.query(
-        `UPDATE phishing_targets SET reported_at = NOW() WHERE message_id = $1 AND reported_at IS NULL`,
-        [message_id]
+        `UPDATE phishing_targets
+         SET reported_at = NOW()
+         WHERE message_id = $1
+           AND EXISTS (
+             SELECT 1 FROM e2ee_messages m
+             WHERE m.id = phishing_targets.message_id
+               AND m.tenant_id = $2
+               AND m.to_email = $3
+           )
+           AND reported_at IS NULL`,
+        [message_id, requesterTenantId, requesterEmail]
       );
-      // Soft-delete the message for the user so it disappears from their inbox
       await pool.query(
-        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
-        [message_id]
+        `UPDATE e2ee_messages
+         SET recipient_deleted_at = NOW()
+         WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+        [message_id, requesterTenantId, requesterEmail]
       );
       return reply.send({ is_phishing_drill: true, message: 'Congratulations, you successfully spotted a simulated phishing attack!' });
-    } else {
-      // Real phishing attempt reported by user -> Escalate to SOC
-      const { rows: msgs } = await pool.query(
-        `SELECT tenant_id, from_email, to_email FROM e2ee_messages WHERE id = $1`,
-        [message_id]
-      );
-      if (msgs.length > 0) {
-        const msg = msgs[0];
-        await pool.query(
-          `INSERT INTO soc_cases (tenant_id, title, description, severity, status, assigned_to)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [msg.tenant_id, `User Reported Phishing`, `User ${msg.to_email} reported an email from ${msg.from_email} (Msg ID: ${message_id})`, 'high', 'open', 'SOC Team']
-        );
-      }
-      // Soft-delete for safety
-      await pool.query(
-        `UPDATE e2ee_messages SET recipient_deleted_at = NOW() WHERE id = $1`,
-        [message_id]
-      );
-      return reply.send({ is_phishing_drill: false, message: 'Email reported successfully to the SOC.' });
     }
+    const { rows: msgs } = await pool.query(
+      `SELECT tenant_id, from_email, to_email
+       FROM e2ee_messages
+       WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+      [message_id, requesterTenantId, requesterEmail]
+    );
+    if (msgs.length > 0) {
+      const msg = msgs[0];
+      await pool.query(
+        `INSERT INTO soc_cases (tenant_id, title, description, severity, status, assigned_to)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [msg.tenant_id, 'User Reported Phishing',
+          `User ${msg.to_email} reported an email from ${msg.from_email} (Msg ID: ${message_id})`,
+          'high', 'open', 'SOC Team']
+      );
+      await pool.query(
+        `UPDATE e2ee_messages
+         SET recipient_deleted_at = NOW()
+         WHERE id = $1 AND tenant_id = $2 AND to_email = $3`,
+        [message_id, requesterTenantId, requesterEmail]
+      );
+    }
+    return reply.send({ is_phishing_drill: false, message: 'Email reported successfully to the SOC.' });
   });
 
 
   // ─── GRC: Vulnerabilities ─────────────────────────────────────────────────
   app.get('/vulnerabilities', socGuard, async (req, reply) => {
-    const { rows } = await pool.query('SELECT * FROM vulnerabilities ORDER BY created_at DESC');
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && !tenantId) {
+      return reply.status(403).send({ error: 'No tenant association' });
+    }
+    const query = isGlobalAdmin && !req.query.tenant_id
+      ? 'SELECT * FROM vulnerabilities ORDER BY created_at DESC'
+      : 'SELECT * FROM vulnerabilities WHERE tenant_id = $1 ORDER BY created_at DESC';
+    const params = isGlobalAdmin && !req.query.tenant_id ? [] : [tenantId];
+    const { rows } = await pool.query(query, params);
     reply.send({ data: rows });
   });
 
   app.post('/vulnerabilities/scan', socGuard, async (req, reply) => {
+    const tenantId = await getTenantId(req);
+    if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     // Generate some fake vulnerabilities (SBOM Simulation)
     const { randomUUID } = await import('crypto');
     const fakeVulns = [
@@ -1120,18 +1178,28 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     ];
     for (const v of fakeVulns) {
       await pool.query(`
-        INSERT INTO vulnerabilities (id, cve_id, title, severity, cvss_score, component)
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING
-      `, [randomUUID(), v.cve, v.title, v.sev, v.cvss, v.comp]);
+        INSERT INTO vulnerabilities (id, tenant_id, cve_id, title, severity, cvss_score, component)
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING
+      `, [randomUUID(), tenantId, v.cve, v.title, v.sev, v.cvss, v.comp]);
     }
     reply.send({ message: 'Scansione SBOM completata con successo.' });
   });
 
   app.patch('/vulnerabilities/:id/status', socGuard, async (req, reply) => {
-    const { status } = req.body;
-    const { rows } = await pool.query(`
-      UPDATE vulnerabilities SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *
-    `, [status, req.params.id]);
+    const { status } = req.body || {};
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && !tenantId) {
+      return reply.status(403).send({ error: 'No tenant association' });
+    }
+    const globalQuery = isGlobalAdmin && !req.query.tenant_id;
+    const query = globalQuery
+      ? `UPDATE vulnerabilities SET status = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`
+      : `UPDATE vulnerabilities SET status = $1, updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3 RETURNING *`;
+    const params = globalQuery ? [status, req.params.id] : [status, req.params.id, tenantId];
+    const { rows } = await pool.query(query, params);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
     reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
@@ -1143,13 +1211,13 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const { rows } = await pool.query('SELECT * FROM assets WHERE tenant_id = $1 ORDER BY last_seen DESC', [tenantId]);
     reply.send({ data: rows });
   });
-  
+
   app.patch('/assets/:id', socGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { status, risk_level } = req.body;
     const { rows } = await pool.query(`
-      UPDATE assets SET status = COALESCE($1, status), risk_level = COALESCE($2, risk_level) 
+      UPDATE assets SET status = COALESCE($1, status), risk_level = COALESCE($2, risk_level)
       WHERE id = $3 AND tenant_id = $4 RETURNING *
     `, [status, risk_level, req.params.id, tenantId]);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
@@ -1168,7 +1236,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
     const { user_email, location, action, reader_id } = req.body;
-    
+
     const { randomUUID } = await import('crypto');
     // 1. Log the physical access
     const { rows } = await pool.query(`
@@ -1191,7 +1259,7 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
           VALUES ($1, 'badge_anomaly', 'critical', 'Physical Reader: ' || $2, $3, $4) RETURNING id`,
          [tenantId, reader_id, user_email, await encryptData(anomalyReason)]
        );
-       
+
        await pool.query(
          `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
           VALUES ($1, $2, 'critical', $3, 'open')`,
@@ -1215,8 +1283,8 @@ export function startSoarWorker(app) {
           AND e.severity IN ('critical', 'high')
           AND e.source_ip IS NOT NULL
           AND NOT EXISTS (
-            SELECT 1 FROM soc_cases c 
-            WHERE c.tenant_id = e.tenant_id 
+            SELECT 1 FROM soc_cases c
+            WHERE c.tenant_id = e.tenant_id
               AND c.title LIKE '%' || e.source_ip || '%'
               AND c.status = 'open'
           )
@@ -1233,7 +1301,7 @@ export function startSoarWorker(app) {
         );
         app.log.info({ ip: row.source_ip, tenant_id: row.tenant_id }, 'SOAR Lite: Created new case');
         if (app.io) {
-          app.io.emit('soc:new_alert', { title: title, ip: row.source_ip });
+      app.io.to(tenantId || "system").emit('soc:new_alert', { title: title, ip: row.source_ip });
         }
       }
     } catch (err) {
@@ -1248,14 +1316,14 @@ function buildMinimalPdf(lines) {
   const pdfLines = [];
   // PDF header
   pdfLines.push('%PDF-1.4');
-  
+
   const objects = [];
   let offset = 0;
   const offsets = [];
-  
+
   // Helper: encode text for PDF
   const enc = s => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  
+
   // Build content stream
   let content = 'BT\n/F1 16 Tf\n50 780 Td\n14 TL\n';
   for (let i = 0; i < lines.length; i++) {
@@ -1266,9 +1334,9 @@ function buildMinimalPdf(lines) {
     }
   }
   content += 'ET\n';
-  
+
   const contentBytes = Buffer.from(content, 'latin1');
-  
+
   // Object 1: catalog
   objects.push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
   // Object 2: pages
@@ -1279,25 +1347,25 @@ function buildMinimalPdf(lines) {
   objects.push(`4 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n${content}\nendstream\nendobj\n`);
   // Object 5: font
   objects.push(`5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`);
-  
+
   // Build PDF bytes
   const parts = ['%PDF-1.4\n'];
   let pos = parts[0].length;
   const xref = [];
-  
+
   for (let i = 0; i < objects.length; i++) {
     xref.push(pos);
     parts.push(objects[i]);
     pos += objects[i].length;
   }
-  
+
   const xrefOffset = pos;
   const xrefSection = ['xref\n', `0 ${objects.length + 1}\n`, '0000000000 65535 f \n'];
   for (const off of xref) {
     xrefSection.push(String(off).padStart(10, '0') + ' 00000 n \n');
   }
   xrefSection.push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
-  
+
   const finalPdf = parts.join('') + xrefSection.join('');
   return Buffer.from(finalPdf, 'latin1');
 }

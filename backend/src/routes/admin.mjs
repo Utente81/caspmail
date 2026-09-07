@@ -612,13 +612,23 @@ export default async function adminRoutes(app) {
       if (userRows.length === 0) return reply.status(404).send({ error: 'User not found' });
       const user = userRows[0];
 
+      // Enforce tenant isolation for hard-delete too
+      try { await assertTenantAccess(req, user.tenant_id); } catch (e) { return reply.status(e.statusCode || 403).send({ error: e.message }); }
+
       try {
         await deleteKeycloakUser(user.email);
       } catch (err) {
         req.log.error({ err, email: user.email }, 'Keycloak user hard delete failed');
       }
 
-      await pool.query('DELETE FROM users WHERE id=$1', [id]);
+      // Conditional delete: non-global admins are further bounded to their tenant
+      const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+      if (isGlobalAdmin) {
+        await pool.query('DELETE FROM users WHERE id=$1', [id]);
+      } else {
+        const { rowCount } = await pool.query('DELETE FROM users WHERE id=$1 AND tenant_id=$2', [id, user.tenant_id]);
+        if (rowCount === 0) return reply.status(404).send({ error: 'User not found or access denied' });
+      }
 
       await pool.query('DELETE FROM e2ee_keys WHERE tenant_id=$1 AND user_email=$2', [user.tenant_id, user.email]);
 

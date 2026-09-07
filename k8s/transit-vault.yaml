@@ -28,36 +28,40 @@ spec:
       labels:
         app: transit-vault
     spec:
-      
       initContainers:
       - name: cert-gen
-        image: alpine/openssl
+        image: alpine/openssl:latest
         command:
         - sh
         - -c
         - |
+          set -e
           if [ ! -f /vault/tls/tls.crt ]; then
-            openssl req -x509 -newkey rsa:4096 -keyout /vault/tls/tls.key -out /vault/tls/tls.crt -days 365 -nodes -subj '/CN=vault.caspermail-enterprise.svc' -addext 'subjectAltName=DNS:vault,DNS:transit-vault,DNS:casper-vault.caspermail.svc.cluster.local'
-            chmod 644 /vault/tls/*
+            openssl req -x509 -newkey rsa:4096 \
+              -keyout /vault/tls/tls.key \
+              -out /vault/tls/tls.crt \
+              -days 365 -nodes \
+              -subj '/CN=transit-vault.caspermail-enterprise.svc.cluster.local' \
+              -addext 'subjectAltName=DNS:transit-vault,DNS:transit-vault.caspermail-enterprise.svc,DNS:transit-vault.caspermail-enterprise.svc.cluster.local'
+            chmod 600 /vault/tls/tls.key
+            chmod 644 /vault/tls/tls.crt
           fi
         volumeMounts:
         - name: tls-certs
           mountPath: /vault/tls
       containers:
-      - args:
+      - name: vault
+        args:
         - server
         env:
         - name: VAULT_LOCAL_CONFIG
           value: >-
             {"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":0,"tls_cert_file":"/vault/tls/tls.crt","tls_key_file":"/vault/tls/tls.key"}},"storage":{"file":{"path":"/vault/file"}},"ui":true}
         - name: VAULT_ADDR
-          value: https://127.0.0.1:8200
-        - name: VAULT_SKIP_VERIFY
-          value: "true"
+          value: https://transit-vault.caspermail-enterprise.svc.cluster.local:8200
         - name: VAULT_CACERT
           value: /vault/tls/tls.crt
         image: hashicorp/vault:1.15.2
-        name: vault
         ports:
         - containerPort: 8200
         securityContext:
@@ -67,6 +71,9 @@ spec:
         volumeMounts:
         - mountPath: /vault/file
           name: vault-data
+        - mountPath: /vault/tls
+          name: tls-certs
+          readOnly: true
       nodeSelector:
         tier: secure-data
       tolerations:
@@ -78,6 +85,8 @@ spec:
       - name: vault-data
         persistentVolumeClaim:
           claimName: transit-vault-data
+      - name: tls-certs
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

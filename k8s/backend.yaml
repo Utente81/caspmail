@@ -70,7 +70,7 @@ spec:
             secretKeyRef:
               key: stalwart_password
               name: casper-secrets
-        image: ghcr.io/utente81/caspmail-backend:097c4067710feb2cb53ae5541cc2244da227e520
+        image: ghcr.io/utente81/caspmail-backend:5ef06b64ce01b22a78ad11d605f5362c0e836d8e
         imagePullPolicy: IfNotPresent
         name: backend
         ports:
@@ -104,7 +104,7 @@ spec:
           /tmp/ext @opentelemetry/auto-instrumentations-node@0.47.1 @opentelemetry/exporter-prometheus@0.52.1
           @opentelemetry/exporter-trace-otlp-http@0.52.1 @opentelemetry/sdk-node@0.52.1
           && cp -a /tmp/ext/node_modules/. /telemetry_node_modules/
-        image: ghcr.io/utente81/caspmail-backend:097c4067710feb2cb53ae5541cc2244da227e520
+        image: ghcr.io/utente81/caspmail-backend:5ef06b64ce01b22a78ad11d605f5362c0e836d8e
         imagePullPolicy: IfNotPresent
         name: init-telemetry
         volumeMounts:

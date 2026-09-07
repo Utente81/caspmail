@@ -144,7 +144,7 @@ export default function SOCCases() {
   const fetchCases = useCallback(async () => {
     setError(null)
     try {
-      const token = sessionStorage.getItem('caspmail_access_token')
+      const token = window.memoryStorage.getItem('caspmail_access_token')
       const res = await fetch('/api/v4/soc/cases', {
         headers: { Authorization: `Bearer ${token}` },
       })

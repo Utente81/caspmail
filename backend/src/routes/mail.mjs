@@ -42,7 +42,7 @@ export default async function mailRoutes(app) {
     if (!tenantId) throw new Error("Missing tenant_id in JWT");
 
     let { rows } = await pool.query(
-      'SELECT * FROM users WHERE email = $1 AND tenant_id = $2 LIMIT 1',
+      'SELECT id, tenant_id, email, name, role, status FROM users WHERE email = $1 AND tenant_id = $2 LIMIT 1',
       [email, tenantId]
     );
 
@@ -202,7 +202,7 @@ export default async function mailRoutes(app) {
       if (!user) return reply.status(404).send({ error: 'User not found' });
 
       const { rows } = await pool.query(
-        'SELECT * FROM e2ee_keys WHERE tenant_id = $1 AND user_email = $2',
+        'SELECT id, user_id, public_key, created_at FROM e2ee_keys WHERE tenant_id = $1 AND user_email = $2',
         [user.tenant_id, user.email]
       );
 
@@ -229,7 +229,7 @@ export default async function mailRoutes(app) {
     }
   });
 
-  app.post('/api/e2ee/corporate-key', authGuard, async (req, reply) => {
+  app.post('/api/e2ee/corporate-key', { preHandler: requireRole(['soc_manager', 'casper_admin']) }, async (req, reply) => {
     try {
       const user = await getUser(req.user);
       // In a real app, only SOC admins can post this.
@@ -537,7 +537,7 @@ export default async function mailRoutes(app) {
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
     const { rows, rowCount } = await pool.query(
-      `SELECT * FROM e2ee_messages
+      `SELECT id, from_email, to_email, subject_encrypted, body_encrypted, nonce, created_at, status FROM e2ee_messages
        WHERE id = $1
          AND tenant_id = $2
          AND (to_email = $3 OR from_email = $3)

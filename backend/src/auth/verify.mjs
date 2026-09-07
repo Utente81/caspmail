@@ -15,10 +15,6 @@ export async function verifyToken(req) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
-  } else if (req.query.token) {
-    // Fallback for short-lived tickets (mitigates SSE token exposure)
-    // We should ideally use a one-time ticket, but for now we accept it and will migrate frontend.
-    token = req.query.token;
   }
 
   if (!token) {
@@ -31,10 +27,11 @@ export async function verifyToken(req) {
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: ISSUER,
       algorithms: ['RS256'],
+      audience: process.env.OAUTH_CLIENT_ID || 'caspmail-client',
     });
 
-    if (!payload.azp) {
-      throw new Error('Missing azp claim');
+    if (payload.azp && payload.azp !== (process.env.OAUTH_CLIENT_ID || 'caspmail-client')) {
+      throw new Error('Invalid azp');
     }
 
     const email = payload.email || payload.preferred_username;

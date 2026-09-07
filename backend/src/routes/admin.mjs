@@ -264,15 +264,31 @@ export default async function adminRoutes(app) {
   app.get('/tenants', adminGuard, async (req, reply) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset = parseInt(req.query.offset || '0', 10);
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
 
-    const { rows } = await pool.query(
-      'SELECT * FROM tenants ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-      [limit, offset]
-    );
-    reply.send({ data: rows, limit, offset });
+    if (isGlobalAdmin) {
+      const { rows } = await pool.query(
+        'SELECT * FROM tenants ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+        [limit, offset]
+      );
+      return reply.send({ data: rows, limit, offset });
+    } else {
+      const tenantId = await getTenantId(req);
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+      const { rows } = await pool.query(
+        'SELECT * FROM tenants WHERE id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+        [tenantId, limit, offset]
+      );
+      return reply.send({ data: rows, limit, offset });
+    }
   });
 
+  
+
   app.post('/tenants', adminGuard, async (req, reply) => {
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (!isGlobalAdmin) return reply.status(403).send({ error: 'Only casper_admin can create tenants' });
+
     const { id, name, plan = 'starter', region = 'eu-west-1' } = req.body || {};
     if (!id || !name) {
       return reply.status(400).send({ error: 'id and name are required' });
@@ -294,24 +310,32 @@ export default async function adminRoutes(app) {
     reply.status(201).send(rows[0]);
   });
 
-  // ─── Users ────────────────────────────────────────────────────────────────
+  
 
   app.delete('/tenants/:id', adminGuard, async (req, reply) => {
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (!isGlobalAdmin) return reply.status(403).send({ error: 'Only casper_admin can delete tenants' });
+
     const { id } = req.params;
-    const { rows } = await pool.query('SELECT * FROM tenants WHERE id = $1', [id]);
-    if (rows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
     await pool.query('UPDATE tenants SET status = $1 WHERE id = $2', ['deleted', id]);
+
     await pool.query(
       `INSERT INTO audit_log (tenant_id, actor, action, resource, details, ip)
        VALUES ($1, $2, 'delete', 'tenant', $3, $4)`,
       [id, req.user.sub, JSON.stringify({ tenant_id: id }), req.ip]
     );
-    await pool.query("UPDATE users SET status = 'suspended' WHERE tenant_id = $1", [id]);
+
     reply.send({ success: true });
   });
 
+  
+
   app.get('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
     const { id } = req.params;
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && id !== tenantId) return reply.status(403).send({ error: 'Forbidden' });
+
     const { rows } = await pool.query('SELECT * FROM tenant_mobile_policies WHERE tenant_id = $1', [id]);
     if (rows.length === 0) return reply.send({ require_biometrics: false, prevent_screenshots: false });
     reply.send(rows[0]);
@@ -319,6 +343,10 @@ export default async function adminRoutes(app) {
 
   app.put('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
     const { id } = req.params;
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+    if (!isGlobalAdmin && id !== tenantId) return reply.status(403).send({ error: 'Forbidden' });
+
     const { require_biometrics, prevent_screenshots } = req.body;
     const { rows } = await pool.query(`
       INSERT INTO tenant_mobile_policies (tenant_id, require_biometrics, prevent_screenshots, updated_at)
@@ -331,6 +359,8 @@ export default async function adminRoutes(app) {
     `, [id, require_biometrics, prevent_screenshots]);
     reply.send(rows[0]);
   });
+
+  
 
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
@@ -475,6 +505,9 @@ export default async function adminRoutes(app) {
 
   app.put('/users/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    const tenantId = await getTenantId(req);
+
     const {
       name = '',
       role = 'user',
@@ -493,13 +526,17 @@ export default async function adminRoutes(app) {
       return reply.status(400).send({ error: 'Password must be at least 8 chars' });
     }
 
-    const { rows, rowCount } = await pool.query(
-      `UPDATE users
-       SET name=$1, role=$2, quota_mb=$3, status=$4
-       WHERE id=$5
-       RETURNING *`,
-      [name, role, Number(quota_mb) || 1024, status, id]
-    );
+    let query = `UPDATE users SET name=$1, role=$2, quota_mb=$3, status=$4 WHERE id=$5`;
+    const params = [name, role, Number(quota_mb) || 1024, status, id];
+    
+    if (!isGlobalAdmin) {
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+      params.push(tenantId);
+      query += ` AND tenant_id=$${params.length}`;
+    }
+    query += ` RETURNING *`;
+
+    const { rows, rowCount } = await pool.query(query, params);
 
     if (rowCount === 0) return reply.status(404).send({ error: 'User not found' });
 
@@ -604,7 +641,13 @@ export default async function adminRoutes(app) {
   app.get('/domains', adminGuard, async (req, reply) => {
     const limit    = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset   = parseInt(req.query.offset || '0', 10);
-    const tenantId = req.query.tenant_id;
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    let tenantId = req.query.tenant_id;
+    
+    if (!isGlobalAdmin) {
+      tenantId = await getTenantId(req);
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    }
 
     let query = 'SELECT * FROM domains';
     const params = [];
@@ -620,6 +663,8 @@ export default async function adminRoutes(app) {
     const { rows } = await pool.query(query, params);
     reply.send({ data: rows, limit, offset });
   });
+
+  
 
   app.post('/domains/:id/verify', adminGuard, async (req, reply) => {
     const { id } = req.params;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, AlertTriangle, Search } from 'lucide-react'
 
 function api(path) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = window.memoryStorage.getItem('caspmail_access_token')
   return fetch(`/api/admin${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
@@ -63,7 +63,7 @@ export default function AdminAudit() {
         <h2 className="adm-workspace-title">Audit Log</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="adm-btn adm-btn-primary" onClick={async () => {
-            const token = sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token');
+            const token = window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token');
             try {
               const res = await fetch(`/api/admin/audit/export`, {
                 headers: { Authorization: `Bearer ${token}` }

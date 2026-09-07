@@ -15,7 +15,7 @@ function openDB() {
 }
 
 function getKeyId() {
-  const email = sessionStorage.getItem('caspmail_user_email') || localStorage.getItem('caspmail_user_email')
+  const email = window.memoryStorage.getItem('caspmail_user_email') || window.memoryStorage.getItem('caspmail_user_email')
   return (email && email.trim()) ? email.trim() : 'main'
 }
 

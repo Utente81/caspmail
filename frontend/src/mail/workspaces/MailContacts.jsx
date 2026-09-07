@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Users, Trash2, UserPlus, Star } from 'lucide-react'
 
 function apiGet(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
@@ -10,7 +10,7 @@ function apiGet(path) {
 }
 
 function apiPost(path, body) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -22,7 +22,7 @@ function apiPost(path, body) {
 }
 
 function apiDelete(path) {
-  const token = (sessionStorage.getItem('caspmail_access_token') || localStorage.getItem('caspmail_access_token'))
+  const token = (window.memoryStorage.getItem('caspmail_access_token') || window.memoryStorage.getItem('caspmail_access_token'))
   return fetch(path, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()

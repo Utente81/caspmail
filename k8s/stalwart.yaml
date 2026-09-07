@@ -76,10 +76,9 @@ spec:
           name: stalwart-config-volume
           subPath: stalwart.toml
       volumes:
-      - emptyDir:
-          medium: Memory
-          sizeLimit: 1Gi
-        name: stalwart-data
+      - name: stalwart-data
+        persistentVolumeClaim:
+          claimName: stalwart-data
       - configMap:
           name: stalwart-config
         name: stalwart-config-volume
@@ -111,7 +110,7 @@ spec:
     targetPort: 8080
   selector:
     app: stalwart-mail
-  type: LoadBalancer
+  type: ClusterIP
 
 ---
 apiVersion: v1

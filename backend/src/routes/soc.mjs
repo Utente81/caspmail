@@ -680,14 +680,20 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
   const lookup = promisify(dns.lookup);
   
   function isPrivateIP(ip) {
-    if (ip === '::1' || ip === '0.0.0.0') return true;
-    if (ip.startsWith('127.')) return true;
-    if (ip.startsWith('10.')) return true;
-    if (ip.startsWith('192.168.')) return true;
-    if (ip.startsWith('169.254.')) return true;
-    if (ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) return true;
-    // Basic IPv6 private checks
-    if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd') || ip.toLowerCase().startsWith('fe80')) return true;
+    let checkIp = ip;
+    if (ip.toLowerCase().startsWith('::ffff:')) {
+      checkIp = ip.slice(7);
+    }
+    if (checkIp === '::1' || checkIp === '0.0.0.0' || checkIp === '::') return true;
+    if (checkIp.startsWith('127.')) return true;
+    if (checkIp.startsWith('10.')) return true;
+    if (checkIp.startsWith('192.168.')) return true;
+    if (checkIp.startsWith('169.254.')) return true;
+    if (checkIp.startsWith('0.')) return true;
+    if (checkIp.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) return true;
+    
+    const lower = checkIp.toLowerCase();
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
     return false;
   }
 
@@ -707,10 +713,23 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
       throw new Error('Unsafe IP address resolved');
     }
 
+    if (process.env.SOAR_ALLOWLIST) {
+      const allowedDomains = process.env.SOAR_ALLOWLIST.split(',').map(d => d.trim());
+      if (!allowedDomains.includes(parsed.hostname)) {
+        throw new Error('Domain not in allowlist');
+      }
+    }
+
     const originalHost = parsed.hostname;
     parsed.hostname = address;
     
-    const headers = options.headers || {};
+    const headers = {};
+    if (options.headers) {
+      for (const [key, val] of Object.entries(options.headers)) {
+        if (key.toLowerCase() === 'host') continue;
+        headers[key] = val;
+      }
+    }
     headers['Host'] = originalHost;
     
     return await fetch(parsed.toString(), {

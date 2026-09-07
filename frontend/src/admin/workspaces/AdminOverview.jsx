@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Building2, Users, Globe, AlertTriangle, RefreshCw } from 'lucide-react'
 
 function api(path, options = {}) {
-  const token = sessionStorage.getItem('caspmail_access_token')
+  const token = window.memoryStorage.getItem('caspmail_access_token')
   const headers = token ? { Authorization: `Bearer ${token}`, ...options.headers } : { ...options.headers }
   if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json'

@@ -197,8 +197,8 @@ export default function SOCThreatMap() {
 
   // Real-time Event Bus via SSE
   useEffect(() => {
-    const token = sessionStorage.getItem('caspmail_access_token')
-    const tenant = sessionStorage.getItem('caspmail_tenant') || 'acme-corp'
+    const token = window.memoryStorage.getItem('caspmail_access_token')
+    const tenant = window.memoryStorage.getItem('caspmail_tenant') || 'acme-corp'
     if (!token) return
 
     const ctrl = new AbortController()

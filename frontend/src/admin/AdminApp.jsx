@@ -48,7 +48,7 @@ export default function AdminApp() {
         if (window.location.search.includes('code=')) {
           const params = new URLSearchParams(window.location.search)
           const code = params.get('code')
-          const verifier = sessionStorage.getItem('admin_pkce_verifier')
+          const verifier = window.memoryStorage.getItem('admin_pkce_verifier')
           const clientId = 'caspermail-admin'
           const redirectUri = window.location.origin + '/console/admin'
           const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
@@ -60,20 +60,20 @@ export default function AdminApp() {
           })
           if (!res.ok) throw new Error('Token exchange failed')
           const data = await res.json()
-          sessionStorage.setItem(STORAGE_KEY, data.access_token)
-          if (data.id_token) sessionStorage.setItem('caspmail_id_token', data.id_token)
-          if (data.refresh_token) sessionStorage.setItem('caspmail_refresh_token', data.refresh_token)
-          sessionStorage.setItem('caspmail_client_id', 'caspermail-admin')
+          window.memoryStorage.setItem(STORAGE_KEY, data.access_token)
+          if (data.id_token) window.memoryStorage.setItem('caspmail_id_token', data.id_token)
+          if (data.refresh_token) window.memoryStorage.setItem('caspmail_refresh_token', data.refresh_token)
+          window.memoryStorage.setItem('caspmail_client_id', 'caspermail-admin')
           const payload = JSON.parse(atob(data.access_token.split('.')[1]))
-          sessionStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'Admin')
-          sessionStorage.setItem('caspmail_user_role', 'Platform Admin')
+          window.memoryStorage.setItem('caspmail_user_name', payload.name || payload.preferred_username || 'Admin')
+          window.memoryStorage.setItem('caspmail_user_role', 'Platform Admin')
           window.history.replaceState({}, '', '/console/admin')
         }
 
-        let token = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY)
+        let token = window.memoryStorage.getItem(STORAGE_KEY) || window.memoryStorage.getItem(STORAGE_KEY)
         if (token) {
-          sessionStorage.setItem(STORAGE_KEY, token)
-          localStorage.setItem(STORAGE_KEY, token)
+          window.memoryStorage.setItem(STORAGE_KEY, token)
+          window.memoryStorage.setItem(STORAGE_KEY, token)
         } else {
           window.location.href = '/console/login'
           return
@@ -83,7 +83,7 @@ export default function AdminApp() {
         try {
           const payload = JSON.parse(atob(token.split('.')[1]))
           if (payload.exp && payload.exp * 1000 < Date.now()) {
-            sessionStorage.removeItem(STORAGE_KEY)
+            window.memoryStorage.removeItem(STORAGE_KEY)
             await startLogin()
             return
           }
@@ -94,7 +94,7 @@ export default function AdminApp() {
           }
         } catch (e) {
           if (e.message.includes('Insufficient')) throw e
-          sessionStorage.removeItem(STORAGE_KEY)
+          window.memoryStorage.removeItem(STORAGE_KEY)
           await startLogin()
           return
         }
@@ -117,7 +117,7 @@ export default function AdminApp() {
 async function startLogin() {
   const verifier = generateVerifier()
   const challenge = await generateChallenge(verifier)
-  sessionStorage.setItem('admin_pkce_verifier', verifier)
+  window.memoryStorage.setItem('admin_pkce_verifier', verifier)
 
   const issuer = window.__CASPERMAIL_CONFIG__?.keycloakIssuer || 'https://auth.caspmail.com/realms/caspermail'
   const clientId = 'caspermail-admin'

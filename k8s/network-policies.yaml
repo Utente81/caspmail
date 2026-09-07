@@ -1,14 +1,50 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: protect-data-layer
+  name: default-deny-all
+  namespace: caspermail-enterprise
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: caspermail-enterprise
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-db-and-redis
   namespace: caspermail-enterprise
 spec:
   podSelector:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: ["postgresql", "redis"]
+        values: ["redis"]
   policyTypes:
   - Ingress
   ingress:
@@ -16,3 +52,88 @@ spec:
     - podSelector:
         matchLabels:
           app: backend
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-postgresql
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: casper-cnpg
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-ingress
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: [] # Allow all ingress for now, or assume ingress controller
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: casper-cnpg
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+    - podSelector:
+        matchLabels:
+          app: vault
+    - podSelector:
+        matchLabels:
+          app: transit-vault
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    - podSelector:
+        matchLabels:
+          app: minio
+  - ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-ingress
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+  - ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443

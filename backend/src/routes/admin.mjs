@@ -189,6 +189,28 @@ async function getTenantId(req) {
 export default async function adminRoutes(app) {
   const adminGuard = { preHandler: requireRole(ADMIN_ROLES) };
 
+
+  // ─── Tenant Access Enforcement ────────────────────────────────────────────
+  // Throws 403 if the actor (non-global-admin) does not own targetTenantId.
+  // Set globalOnly=true to block any non-casper_admin completely.
+  async function assertTenantAccess(req, targetTenantId, { globalOnly = false } = {}) {
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (isGlobal) return; // casper_admin bypasses all checks
+    if (globalOnly) throw Object.assign(new Error('Only casper_admin can perform this action'), { statusCode: 403 });
+    const actorTenant = await getTenantId(req);
+    if (!actorTenant) throw Object.assign(new Error('No tenant association'), { statusCode: 403 });
+    if (actorTenant !== targetTenantId) throw Object.assign(new Error('Forbidden: cross-tenant access denied'), { statusCode: 403 });
+  }
+
+  // Convenience: extract tenant and assert in one call; returns the actorTenantId.
+  async function requireTenant(req) {
+    const isGlobal = req.user?.realm_access?.roles?.includes('casper_admin');
+    if (isGlobal) return null; // returns null signals "global admin, no restriction"
+    const tenantId = await getTenantId(req);
+    if (!tenantId) throw Object.assign(new Error('No tenant association'), { statusCode: 403 });
+    return tenantId;
+  }
+
   // ─── Summary ──────────────────────────────────────────────────────────────
 
   app.get('/summary', adminGuard, async (req, reply) => {
@@ -230,7 +252,7 @@ export default async function adminRoutes(app) {
   app.post('/simulate-attack', adminGuard, async (req, reply) => {
     let tenantId = await getTenantId(req);
     if (!tenantId) tenantId = 'system';
-    
+
     const { type, message } = req.body || {};
     const severity = 'critical';
     const source_ip = '10.0.0.99';
@@ -240,13 +262,13 @@ export default async function adminRoutes(app) {
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [tenantId, eventType, severity, source_ip, message || 'Manual simulated attack']
     );
-    
+
     await pool.query(
       `INSERT INTO soc_alerts (tenant_id, event_id, severity, message, status)
        VALUES ($1, $2, $3, $4, 'open')`,
       [tenantId, evRows[0].id, severity, message || 'Manual simulated attack']
     );
-    
+
     if (app.io) {
       app.io.emit('soc:new_alert', { title: message || 'Manual simulated attack', ip: source_ip });
     }
@@ -255,7 +277,7 @@ export default async function adminRoutes(app) {
     import('../services/soar.mjs').then(({ processSoarPlaybooks }) => {
       processSoarPlaybooks(tenantId, eventType, { source_ip, user_email: null, message });
     }).catch(console.error);
-    
+
     reply.send({ ok: true, message: 'Simulated attack injected into SIEM' });
   });
 
@@ -283,7 +305,7 @@ export default async function adminRoutes(app) {
     }
   });
 
-  
+
 
   app.post('/tenants', adminGuard, async (req, reply) => {
     const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
@@ -310,7 +332,7 @@ export default async function adminRoutes(app) {
     reply.status(201).send(rows[0]);
   });
 
-  
+
 
   app.delete('/tenants/:id', adminGuard, async (req, reply) => {
     const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
@@ -328,7 +350,7 @@ export default async function adminRoutes(app) {
     reply.send({ success: true });
   });
 
-  
+
 
   app.get('/tenants/:id/mobile-policies', adminGuard, async (req, reply) => {
     const { id } = req.params;
@@ -351,29 +373,31 @@ export default async function adminRoutes(app) {
     const { rows } = await pool.query(`
       INSERT INTO tenant_mobile_policies (tenant_id, require_biometrics, prevent_screenshots, updated_at)
       VALUES ($1, $2, $3, NOW())
-      ON CONFLICT (tenant_id) DO UPDATE 
-      SET require_biometrics = EXCLUDED.require_biometrics, 
-          prevent_screenshots = EXCLUDED.prevent_screenshots, 
+      ON CONFLICT (tenant_id) DO UPDATE
+      SET require_biometrics = EXCLUDED.require_biometrics,
+          prevent_screenshots = EXCLUDED.prevent_screenshots,
           updated_at = NOW()
       RETURNING *
     `, [id, require_biometrics, prevent_screenshots]);
     reply.send(rows[0]);
   });
 
-  
+
 
   app.get('/users', adminGuard, async (req, reply) => {
     const limit     = Math.min(parseInt(req.query.limit  || '50', 10), 200);
     const offset    = parseInt(req.query.offset || '0', 10);
-    
-    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
-    let tenantId = req.query.tenant_id;
-    if (!isGlobalAdmin) {
-      tenantId = req.user?.tenant_id;
-    }
-    
 
-    let query = 'SELECT * FROM users';
+    const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
+    let tenantId;
+    if (isGlobalAdmin) {
+      tenantId = req.query.tenant_id || null; // optional filter for global admins
+    } else {
+      tenantId = await getTenantId(req);
+      if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
+    }
+
+    let query = 'SELECT id, tenant_id, email, name, role, quota_mb, status, legal_hold, created_at FROM users';
     const params = [];
     const where = [];
 
@@ -397,8 +421,11 @@ export default async function adminRoutes(app) {
     reply.send({ data: rows, limit, offset });
   });
 
+
+
   app.post('/users', adminGuard, async (req, reply) => {
     const { tenant_id, email, name = '', role = 'user', quota_mb = 1024, password = '' } = req.body || {};
+    try { await assertTenantAccess(req, tenant_id); } catch (e) { return reply.status(e.statusCode || 403).send({ error: e.message }); }
     if (!tenant_id || !email) {
       return reply.status(400).send({ error: 'tenant_id and email are required' });
     }
@@ -492,14 +519,18 @@ export default async function adminRoutes(app) {
     const { id } = req.params;
     const { legal_hold } = req.body;
     try {
+      // Load user first to validate tenant ownership
+      const { rows: existing } = await pool.query('SELECT tenant_id FROM users WHERE id = $1', [id]);
+      if (existing.length === 0) return reply.status(404).send({ error: 'User not found' });
+      await assertTenantAccess(req, existing[0].tenant_id);
       const { rows } = await pool.query(
-        'UPDATE users SET legal_hold = $1 WHERE id = $2 RETURNING *',
+        'UPDATE users SET legal_hold = $1 WHERE id = $2 RETURNING id, email, legal_hold, tenant_id',
         [legal_hold, id]
       );
       if (rows.length === 0) return reply.status(404).send({ error: 'User not found' });
       reply.send(rows[0]); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
     } catch (e) {
-      reply.status(500).send({ error: e.message });
+      reply.status(e.statusCode || 500).send({ error: e.message });
     }
   });
 
@@ -528,7 +559,7 @@ export default async function adminRoutes(app) {
 
     let query = `UPDATE users SET name=$1, role=$2, quota_mb=$3, status=$4 WHERE id=$5`;
     const params = [name, role, Number(quota_mb) || 1024, status, id];
-    
+
     if (!isGlobalAdmin) {
       if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
       params.push(tenantId);
@@ -588,7 +619,7 @@ export default async function adminRoutes(app) {
       }
 
       await pool.query('DELETE FROM users WHERE id=$1', [id]);
-      
+
       await pool.query('DELETE FROM e2ee_keys WHERE tenant_id=$1 AND user_email=$2', [user.tenant_id, user.email]);
 
       await pool.query(
@@ -643,7 +674,7 @@ export default async function adminRoutes(app) {
     const offset   = parseInt(req.query.offset || '0', 10);
     const isGlobalAdmin = req.user?.realm_access?.roles?.includes('casper_admin');
     let tenantId = req.query.tenant_id;
-    
+
     if (!isGlobalAdmin) {
       tenantId = await getTenantId(req);
       if (!tenantId) return reply.status(403).send({ error: 'No tenant association' });
@@ -664,12 +695,13 @@ export default async function adminRoutes(app) {
     reply.send({ data: rows, limit, offset });
   });
 
-  
+
 
   app.post('/domains/:id/verify', adminGuard, async (req, reply) => {
     const { id } = req.params;
     const { rows: [domain] } = await pool.query('SELECT * FROM domains WHERE id = $1', [id]);
     if (!domain) return reply.status(404).send({ error: 'Domain not found' });
+    try { await assertTenantAccess(req, domain.tenant_id); } catch (e) { return reply.status(e.statusCode || 403).send({ error: e.message }); }
     if (domain.verified) return reply.send(domain);
 
     // DNS TXT lookup via system resolver (best-effort)
@@ -703,6 +735,7 @@ export default async function adminRoutes(app) {
     if (!tenant_id || !domain) {
       return reply.status(400).send({ error: 'tenant_id and domain are required' });
     }
+    try { await assertTenantAccess(req, tenant_id); } catch (e) { return reply.status(e.statusCode || 403).send({ error: e.message }); }
 
     const { rows: tenantRows } = await pool.query('SELECT status FROM tenants WHERE id = $1', [tenant_id]);
     if (tenantRows.length === 0) return reply.status(404).send({ error: 'Tenant not found' });
@@ -740,7 +773,7 @@ export default async function adminRoutes(app) {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { process_name, data_categories, legal_basis, retention_period, data_subjects } = req.body;
-    
+
     const { rows } = await pool.query(`
       INSERT INTO ropa_records (id, tenant_id, process_name, data_categories, legal_basis, retention_period, data_subjects)
       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
@@ -767,7 +800,7 @@ export default async function adminRoutes(app) {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { user_email, request_type, details } = req.body;
-    
+
     const { rows } = await pool.query(`
       INSERT INTO dsr_requests (id, tenant_id, user_email, request_type, details)
       VALUES ($1, $2, $3, $4, $5) RETURNING *
@@ -818,8 +851,8 @@ export default async function adminRoutes(app) {
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
     const { title, version, content, is_active } = req.body;
     const { rows } = await pool.query(`
-      UPDATE security_policies 
-      SET title = $1, version = $2, content = $3, is_active = $4 
+      UPDATE security_policies
+      SET title = $1, version = $2, content = $3, is_active = $4
       WHERE id = $5 AND tenant_id = $6 RETURNING *
     `, [title, version, content, is_active, req.params.id, tenantId]);
     if (rows.length === 0) return reply.status(404).send({ error: 'Not found' });
@@ -852,9 +885,9 @@ export default async function adminRoutes(app) {
   app.get('/vendors', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rows } = await pool.query(`
-      SELECT v.*, 
+      SELECT v.*,
              d.status as dpa_status, d.signed_at as dpa_signed_at, d.expires_at as dpa_expires_at,
              a.status as assessment_status, a.score as assessment_score, a.completed_at as assessment_completed_at
       FROM vendors v
@@ -869,9 +902,9 @@ export default async function adminRoutes(app) {
   app.post('/vendors', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { name, contact_email, service_provided, risk_level } = req.body;
-    
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -879,12 +912,12 @@ export default async function adminRoutes(app) {
         INSERT INTO vendors (tenant_id, name, contact_email, service_provided, risk_level)
         VALUES ($1, $2, $3, $4, $5) RETURNING id
       `, [tenantId, name, contact_email, service_provided, risk_level || 'medium']);
-      
+
       const vendorId = vendorRows[0].id;
-      
+
       await client.query(`INSERT INTO vendor_dpas (vendor_id) VALUES ($1)`, [vendorId]);
       await client.query(`INSERT INTO vendor_assessments (vendor_id) VALUES ($1)`, [vendorId]);
-      
+
       await client.query('COMMIT');
       reply.status(201).send({ ok: true, id: vendorId });
     } catch (e) {
@@ -899,7 +932,7 @@ export default async function adminRoutes(app) {
   app.delete('/vendors/:id', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rowCount } = await pool.query('DELETE FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
     reply.send({ ok: true });
@@ -908,34 +941,34 @@ export default async function adminRoutes(app) {
   app.post('/vendors/:id/dpa/sign', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
-    
+
     await pool.query(`
-      UPDATE vendor_dpas 
-      SET status = 'valid', signed_at = NOW(), expires_at = NOW() + INTERVAL '1 year' 
+      UPDATE vendor_dpas
+      SET status = 'valid', signed_at = NOW(), expires_at = NOW() + INTERVAL '1 year'
       WHERE vendor_id = $1
     `, [req.params.id]);
-    
+
     reply.send({ ok: true });
   });
 
   app.post('/vendors/:id/assess', adminGuard, async (req, reply) => {
     const tenantId = await getTenantId(req);
     if (!tenantId) return reply.status(403).send({ error: 'No tenant' });
-    
+
     const { score } = req.body;
-    
+
     const { rowCount } = await pool.query('SELECT id FROM vendors WHERE id = $1 AND tenant_id = $2', [req.params.id, tenantId]);
     if (rowCount === 0) return reply.status(404).send({ error: 'Vendor not found' });
-    
+
     await pool.query(`
-      UPDATE vendor_assessments 
-      SET status = 'completed', score = $2, completed_at = NOW() 
+      UPDATE vendor_assessments
+      SET status = 'completed', score = $2, completed_at = NOW()
       WHERE vendor_id = $1
     `, [req.params.id, score || 100]);
-    
+
     reply.send({ ok: true });
   });
 
@@ -1046,10 +1079,10 @@ export default async function adminRoutes(app) {
 
   app.delete('/domains/:id', adminGuard, async (req, reply) => {
     const { id } = req.params;
-    
+
     const tenantId = await getTenantId(req);
     const { rows } = await pool.query('SELECT * FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-    
+
     if (rows.length === 0) return reply.status(404).send({ error: 'Domain not found' });
     await pool.query('DELETE FROM domains WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     await pool.query(

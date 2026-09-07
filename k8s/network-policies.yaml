@@ -34,26 +34,126 @@ spec:
       port: 53
 
 ---
+# Allow Traefik (kube-system) to reach backend pods on port 3000
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: protect-db-and-redis
+  name: allow-backend-from-ingress
   namespace: caspermail-enterprise
 spec:
   podSelector:
-    matchExpressions:
-      - key: app.kubernetes.io/name
-        operator: In
-        values: ["redis"]
+    matchLabels:
+      app: backend
   policyTypes:
   - Ingress
   ingress:
   - from:
-    - podSelector:
+    - namespaceSelector:
         matchLabels:
-          app: backend
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik
+    ports:
+    - protocol: TCP
+      port: 3000
 
 ---
+# Allow Traefik (kube-system) to reach frontend pods on port 80
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-from-ingress
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 8080
+
+---
+# Backend egress: DB, Redis, Vault, Transit Vault, Keycloak, MinIO + external HTTPS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: casper-cnpg
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: vault
+    ports:
+    - protocol: TCP
+      port: 8200
+  - to:
+    - podSelector:
+        matchLabels:
+          app: transit-vault
+    ports:
+    - protocol: TCP
+      port: 8200
+  - to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  - to:
+    - podSelector:
+        matchLabels:
+          app: minio
+    ports:
+    - protocol: TCP
+      port: 9000
+  - to: []   # External HTTPS for JWKS, SOAR webhooks (allowlisted by code), email
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 25
+    - protocol: TCP
+      port: 587
+
+---
+# Protect PostgreSQL: only backend allowed in
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -70,70 +170,72 @@ spec:
     - podSelector:
         matchLabels:
           app: backend
+    ports:
+    - protocol: TCP
+      port: 5432
 
 ---
+# Protect Redis: only backend allowed in
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-backend-ingress
+  name: protect-redis
   namespace: caspermail-enterprise
 spec:
   podSelector:
     matchLabels:
-      app: backend
+      app.kubernetes.io/name: redis
   policyTypes:
   - Ingress
-  - Egress
   ingress:
-  - from: [] # Allow all ingress for now, or assume ingress controller
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          cnpg.io/cluster: casper-cnpg
-    - podSelector:
-        matchLabels:
-          app.kubernetes.io/name: redis
-    - podSelector:
-        matchLabels:
-          app: vault
-    - podSelector:
-        matchLabels:
-          app: transit-vault
-    - podSelector:
-        matchLabels:
-          app: keycloak
-    - podSelector:
-        matchLabels:
-          app: minio
-  - ports:
-    - protocol: TCP
-      port: 80
-    - protocol: TCP
-      port: 443
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend-ingress
-  namespace: caspermail-enterprise
-spec:
-  podSelector:
-    matchLabels:
-      app: frontend
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from: []
-  egress:
-  - to:
+  - from:
     - podSelector:
         matchLabels:
           app: backend
-  - ports:
+    ports:
     - protocol: TCP
-      port: 80
+      port: 6379
+
+---
+# Protect Vault: only backend allowed in
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-vault
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: vault
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+    ports:
     - protocol: TCP
-      port: 443
+      port: 8200
+
+---
+# Protect Transit Vault: only backend allowed in
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-transit-vault
+  namespace: caspermail-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: transit-vault
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+    ports:
+    - protocol: TCP
+      port: 8200

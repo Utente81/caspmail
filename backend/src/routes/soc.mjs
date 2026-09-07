@@ -713,28 +713,41 @@ const zeroTrustGuard = { preHandler: [requireRole(SOC_ROLES), zeroTrustGuardHook
       throw new Error('Unsafe IP address resolved');
     }
 
-    if (process.env.SOAR_ALLOWLIST) {
-      const allowedDomains = process.env.SOAR_ALLOWLIST.split(',').map(d => d.trim());
-      if (!allowedDomains.includes(parsed.hostname)) {
-        throw new Error('Domain not in allowlist');
+    // Allowlist is MANDATORY (fail-closed). Set SOAR_ALLOWLIST=domain1.com,domain2.com
+    const rawAllowlist = process.env.SOAR_ALLOWLIST || '';
+    if (!rawAllowlist.trim()) {
+      throw new Error('SOAR_ALLOWLIST env var is not configured. Webhook actions are disabled.');
+    }
+    const allowedDomains = rawAllowlist.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+    if (!allowedDomains.includes(parsed.hostname.toLowerCase())) {
+      throw new Error(`Domain '${parsed.hostname}' is not in the SOAR allowlist`);
+    }
+
+    // Re-resolve right before connecting to prevent DNS rebinding attacks
+    const { address: finalAddress } = await lookup(parsed.hostname);
+    if (isPrivateIP(finalAddress)) {
+      throw new Error('Unsafe IP address resolved on second check (DNS rebinding?)');
+    }
+
+    // Build sanitised request — strip any caller-controlled headers
+    const safeHeaders = { 'Content-Type': 'application/json' };
+    const allowedHeaders = ['content-type', 'accept', 'x-request-id'];
+    if (options.headers) {
+      for (const [key, val] of Object.entries(options.headers)) {
+        if (allowedHeaders.includes(key.toLowerCase())) {
+          safeHeaders[key] = val;
+        }
       }
     }
 
-    const originalHost = parsed.hostname;
-    parsed.hostname = address;
+    // Connect via resolved IP but keep hostname in Host header for TLS SNI
+    const targetUrl = new URL(parsed.toString());
+    targetUrl.hostname = finalAddress;
     
-    const headers = {};
-    if (options.headers) {
-      for (const [key, val] of Object.entries(options.headers)) {
-        if (key.toLowerCase() === 'host') continue;
-        headers[key] = val;
-      }
-    }
-    headers['Host'] = originalHost;
-    
-    return await fetch(parsed.toString(), {
+    return await fetch(targetUrl.toString(), {
       ...options,
-      headers
+      headers: safeHeaders,
+      redirect: 'error', // never follow redirects
     });
   }
   // Internal: execute a playbook action

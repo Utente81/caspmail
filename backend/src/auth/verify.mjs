@@ -34,15 +34,31 @@ export async function verifyToken(req) {
       throw new Error('Invalid azp');
     }
 
+    // Resolve identity from DB — the sub (Keycloak user ID) is the stable primary key
+    const sub   = payload.sub;
     const email = payload.email || payload.preferred_username;
-    if (email) {
-      const { rows } = await pool.query('SELECT tenant_id, status FROM users WHERE email = $1', [email]);
-      if (rows.length > 0) {
-        if (rows[0].status === 'suspended' || rows[0].status === 'deleted') {
-          throw new Error('User account is inactive');
-        }
-        payload.tenant_id = rows[0].tenant_id;
+
+    // Global service accounts identified only by azp are allowed through without a DB record
+    const isServiceAccount = !email && payload.client_id;
+
+    if (!isServiceAccount) {
+      // Look up by sub first (stable), fall back to email for legacy rows
+      const { rows } = await pool.query(
+        'SELECT tenant_id, status FROM users WHERE (keycloak_sub = $1 OR email = $2) LIMIT 1',
+        [sub, email]
+      );
+
+      if (rows.length === 0) {
+        // Unknown user: reject by default. Explicit enrollment required.
+        throw new Error('User not registered. Please contact your administrator.');
       }
+
+      if (rows[0].status === 'suspended' || rows[0].status === 'deleted') {
+        throw new Error('User account is inactive');
+      }
+
+      // Always set tenant_id from the server-side record, never from JWT claims
+      payload.tenant_id = rows[0].tenant_id;
     }
 
     return payload;

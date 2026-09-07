@@ -48,8 +48,14 @@ spec:
         - server
         env:
         - name: VAULT_LOCAL_CONFIG
-          value: '{"listener": {"tcp": {"address": "0.0.0.0:8200", "tls_disable":
-            1}}, "storage": {"file": {"path": "/vault/file"}}, "ui": true}'
+          value: >-
+            {"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":0,"tls_cert_file":"/vault/tls/tls.crt","tls_key_file":"/vault/tls/tls.key"}},"storage":{"file":{"path":"/vault/file"}},"ui":true}
+        - name: VAULT_ADDR
+          value: https://127.0.0.1:8200
+        - name: VAULT_SKIP_VERIFY
+          value: "true"
+        - name: VAULT_CACERT
+          value: /vault/tls/tls.crt
         image: hashicorp/vault:1.15.2
         name: vault
         ports:

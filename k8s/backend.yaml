@@ -70,6 +70,10 @@ spec:
             secretKeyRef:
               key: stalwart_password
               name: casper-secrets
+        - name: VAULT_ADDR
+          value: https://casper-vault.caspermail-enterprise.svc.cluster.local:8200
+        - name: VAULT_CACERT
+          value: /etc/caspermail/vault-tls/tls.crt
         image: ghcr.io/utente81/caspmail-backend:5ef06b64ce01b22a78ad11d605f5362c0e836d8e
         imagePullPolicy: IfNotPresent
         name: backend
@@ -94,6 +98,9 @@ spec:
           readOnly: true
         - mountPath: /app/node_modules
           name: telemetry-node-modules
+        - name: vault-tls
+          mountPath: /etc/caspermail/vault-tls
+          readOnly: true
       imagePullSecrets:
       - name: ghcr-login-secret
       initContainers:
@@ -124,6 +131,9 @@ spec:
           items:
           - key: ca.crt
             path: ca.crt
+      - name: vault-tls
+        secret:
+          secretName: vault-tls
 ---
 apiVersion: v1
 kind: Service

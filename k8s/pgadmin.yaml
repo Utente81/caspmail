@@ -24,7 +24,7 @@ spec:
               name: casper-secrets
         - name: PGADMIN_SERVER_JSON_FILE
           value: /pgadmin4/servers.json
-        image: dpage/pgadmin4:8.8
+        image: dpage/pgadmin4:8.8@sha256:89ce52a67bf44d0ca18d22205b103e4488700c5305cecd5980528e472c2f36e3
         name: pgadmin
         ports:
         - containerPort: 80

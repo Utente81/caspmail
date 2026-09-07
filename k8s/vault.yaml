@@ -43,21 +43,6 @@ spec:
       labels:
         app: vault
     spec:
-      
-      initContainers:
-      - name: cert-gen
-        image: alpine/openssl
-        command:
-        - sh
-        - -c
-        - |
-          if [ ! -f /vault/tls/tls.crt ]; then
-            openssl req -x509 -newkey rsa:4096 -keyout /vault/tls/tls.key -out /vault/tls/tls.crt -days 365 -nodes -subj '/CN=vault.caspermail-enterprise.svc' -addext 'subjectAltName=DNS:vault,DNS:transit-vault,DNS:casper-vault.caspermail.svc.cluster.local'
-            chmod 644 /vault/tls/*
-          fi
-        volumeMounts:
-        - name: tls-certs
-          mountPath: /vault/tls
       containers:
       - command:
         - vault
@@ -69,7 +54,7 @@ spec:
             secretKeyRef:
               key: token
               name: vault-unseal-token
-        image: hashicorp/vault:1.15
+        image: hashicorp/vault:1.15@sha256:0450896c43b13879b19442b204ce29dd19b5a10fce43d5cf38af17da20f56f4d
         name: vault
         ports:
         - containerPort: 8200

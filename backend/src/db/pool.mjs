@@ -3,7 +3,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
+const VAULT_ADDR = process.env.VAULT_ADDR;
 const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
 let cachedPassword = null;

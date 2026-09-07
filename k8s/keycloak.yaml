@@ -86,7 +86,7 @@ spec:
         - /bin/sh
         - -c
         - cp -R /opt/keycloak/lib/quarkus/* /tmp/quarkus/
-        image: quay.io/keycloak/keycloak:25.0
+        image: quay.io/keycloak/keycloak:25.0@sha256:82c5b7a110456dbd42b86ea572e728878549954cc8bd03cd65410d75328095d2
         name: init-keycloak
         securityContext:
           runAsUser: 1000

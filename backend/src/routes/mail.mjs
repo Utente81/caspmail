@@ -5,7 +5,7 @@ import { logSiemEvent } from '../audit/siem.mjs';
 
 const authGuard = { preHandler: requireAuth };
 const socGuard = { preHandler: requireRole(['soc_analyst', 'soc_manager', 'admin', 'casper_admin']) };
-const VAULT_ADDR = process.env.VAULT_ADDR || 'http://casper-vault.caspermail.svc.cluster.local:8200';
+const VAULT_ADDR = process.env.VAULT_ADDR;
 const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
 async function wrapKey(plaintext) {

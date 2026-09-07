@@ -1,0 +1,29 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: caspermail-enterprise
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-tls
+  namespace: caspermail-enterprise
+spec:
+  isCA: true
+  commonName: casper-vault.caspermail-enterprise.svc.cluster.local
+  dnsNames:
+  - casper-vault
+  - casper-vault.caspermail-enterprise.svc
+  - casper-vault.caspermail-enterprise.svc.cluster.local
+  secretName: vault-tls
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
